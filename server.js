@@ -1,32 +1,45 @@
 const express = require('express');
-const http = require('http');
+const https = require('https');
 const socketIo = require('socket.io');
+const fs = require('fs')
 
 const app = express();
-const server = http.createServer(app);
+
+const options = {
+    key: fs.readFileSync('ssl/key.pem'),
+    cert: fs.readFileSync('ssl/cert.pem')
+  };
+
+
+const server = https.createServer(options, app);
 const io = socketIo(server);
 
-app.use(express.static('public'));
+// Serve the static HTML page
+app.use(express.static('public')); // 'public' folder contains index.html
 
+// Handle socket connections
 io.on('connection', (socket) => {
-    console.log('a user connected');
-    
-    // Join a room for peer-to-peer communication
+    console.log('A user connected');
+
+    // Join the room when the user accesses a URL like '/index.html/{roomId}'
     socket.on('join-room', (roomId) => {
-        socket.join(roomId);
+        socket.join(roomId); // Join the room
         console.log(`User joined room: ${roomId}`);
     });
 
-    // Forward the signaling messages to all peers in the room
+    // Handle signaling messages (offer/answer/ICE candidates)
     socket.on('message', (data) => {
-        io.to(data.roomId).emit('message', data);
+        console.log('hello');
+        // Forward the signaling message to the other peer in the room
+        socket.to(data.roomId).emit('message', data);
     });
 
     socket.on('disconnect', () => {
-        console.log('user disconnected');
+        console.log('A user disconnected');
     });
 });
 
-server.listen(3000, () => {
-    console.log('Server is running on http://localhost:3000');
+// Start the server
+server.listen(3000, '10.10.10.100', () => {
+    console.log('Server running on https://10.10.10.100:3000');
 });

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote User - Video Call</title>
+    <style>
+        video {
+            width: 45%;
+            margin: 10px;
+        }
+        #localVideo {
+            border: 2px solid black;
+        }
+        #remoteVideo {
+            border: 2px solid green;
+        }
+    </style>
+</head>
+<body>
+    <h1>Remote User - Video Call</h1>
+    <div>
+        <video id="localVideo" autoplay muted></video>
+        <video id="remoteVideo" autoplay></video>
+    </div>
+
+    <script src="https://cdn.socket.io/4.1.3/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        const roomId = 'test-room'; // Room ID for the call
+
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+
+        let localStream;
+        let peerConnection;
+        let currentStream = 'camera'; // Tracks current stream type (camera/screen)
+
+        const servers = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        // Join the room when the page loads
+        socket.emit('join-room', roomId);
+
+        // Handle incoming messages (offer/answer/ICE candidates)
+        socket.on('message', async (data) => {
+            if (data.offer) {
+                // Create a new peer connection for the remote user
+                peerConnection = new RTCPeerConnection(servers);
+
+                // Set up local video stream
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+
+                // Add local stream to the peer connection
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+                // Set up remote stream handling
+                peerConnection.ontrack = (event) => {
+                    if (event.streams && event.streams[0]) {
+                        remoteVideo.srcObject = event.streams[0]; // Attach the remote stream to the remote video element
+                    }
+                };
+
+                // Handle ICE candidate exchange
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('message', { roomId, candidate: event.candidate });
+                    }
+                };
+
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+                // Create answer and send back
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.emit('message', { roomId, answer });
+            } else if (data.answer) {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            } else if (data.candidate) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        });
+    </script>
+</body>
+</html>

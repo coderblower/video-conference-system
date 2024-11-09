@@ -7,7 +7,13 @@ const startCallButton = document.getElementById('startCall');
 const shareScreenButton = document.getElementById('shareScreen');
 const switchToCameraButton = document.getElementById('switchToCamera');
 
+const cors = require('cors');
+app.use(cors({ origin: 'http://127.0.0.1:5500' }));
+
+
+
 let localStream;
+
 let remoteStream;
 let peerConnection;
 let screenStream;
@@ -27,6 +33,7 @@ socket.emit('join-room', roomId);
 // Start video call
 startCallButton.addEventListener('click', startCall);
 async function startCall() {
+    console.log('fired')
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
 
@@ -59,6 +66,7 @@ async function startCall() {
 
 // Handle incoming messages (offer/answer/ICE candidates)
 socket.on('message', async (data) => {
+    console.log('fired')
     if (data.offer) {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
 
