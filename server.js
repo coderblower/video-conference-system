@@ -23,13 +23,14 @@ io.on('connection', (socket) => {
 
     // Join the room when the user accesses a URL like '/index.html/{roomId}'
     socket.on('join-room', (roomId) => {
+        
         socket.join(roomId); // Join the room
-        console.log(`User joined room: ${roomId}`);
+        
     });
 
     // Handle signaling messages (offer/answer/ICE candidates)
     socket.on('message', (data) => {
-        console.log('hello');
+        console.log('hello', data);
         // Forward the signaling message to the other peer in the room
         socket.to(data.roomId).emit('message', data);
     });
@@ -40,6 +41,6 @@ io.on('connection', (socket) => {
 });
 
 // Start the server
-server.listen(3000, '10.10.10.100', () => {
-    console.log('Server running on https://10.10.10.100:3000');
+server.listen(3000, () => {
+    console.log('Server running on https://localhost:3000');
 });
