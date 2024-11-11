@@ -1,6 +1,7 @@
 const express = require('express');
 const https = require('https');
 const socketIo = require('socket.io');
+const session = require('express-session');
 const fs = require('fs')
 
 const app = express();
