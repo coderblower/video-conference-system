@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Call with Screen Sharing Only</title>
+    <title>Video Call with Screen Sharing and Webcam Toggle</title>
     <style>
         video {
             width: 45%;
@@ -18,14 +18,14 @@
     </style>
 </head>
 <body>
-    <h1>Video Call with Screen Sharing Only</h1>
+    <h1>Video Call with Screen Sharing and Webcam Toggle</h1>
     <div>
         <video id="localVideo" autoplay muted></video>
         <video id="remoteVideo" autoplay></video>
     </div>
     <div>
         <button id="startCall">Start Call</button>
-        <button id="shareScreen">Share Screen</button>
+        <button id="toggleVideoSource">Toggle Video Source</button>
     </div>
 
     <script src="https://cdn.socket.io/4.1.3/socket.io.min.js"></script>
@@ -36,12 +36,12 @@
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
         const startCallButton = document.getElementById('startCall');
-        const shareScreenButton = document.getElementById('shareScreen');
+        const toggleVideoSourceButton = document.getElementById('toggleVideoSource');
 
         let localStream;
         let remoteStream;
         let peerConnection;
-        let screenStream;
+        let currentStreamType = 'screen'; // Start with screen sharing
 
         const servers = {
             iceServers: [
@@ -54,18 +54,18 @@
         // Join the room when the page loads
         socket.emit('join-room', roomId);
 
-        // Start the video call (only for screen sharing)
+        // Start the call
         startCallButton.addEventListener('click', startCall);
         async function startCall() {
-            // Start the screen sharing without starting the camera
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            localVideo.srcObject = screenStream;
+            // Start with screen sharing by default
+            localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            localVideo.srcObject = localStream;
 
             // Create the peer connection
             peerConnection = new RTCPeerConnection(servers);
 
-            // Add screen stream to the peer connection
-            screenStream.getTracks().forEach(track => peerConnection.addTrack(track, screenStream));
+            // Add the initial screen stream to the peer connection
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
             // Set up remote stream handling
             peerConnection.ontrack = (event) => {
@@ -104,25 +104,25 @@
             }
         });
 
-        // Screen sharing functionality
-        shareScreenButton.addEventListener('click', async () => {
-            // If screen sharing is not active, start it
-            if (!screenStream) {
-                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                localVideo.srcObject = screenStream;
+        // Toggle between screen sharing and webcam
+        toggleVideoSourceButton.addEventListener('click', async () => {
+            if (currentStreamType === 'screen') {
+                // Switch to webcam
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                currentStreamType = 'webcam';
+            } else {
+                // Switch back to screen sharing
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                currentStreamType = 'screen';
+            }
 
-                // Replace the local video track with the screen sharing track
-                const screenTrack = screenStream.getTracks()[0];
-                peerConnection.getSenders().forEach(sender => {
-                    if (sender.track.kind === 'video') {
-                        sender.replaceTrack(screenTrack);
-                    }
-                });
+            localVideo.srcObject = localStream;
 
-                screenTrack.onended = () => {
-                    // Automatically end the screen sharing if the user stops it
-                    localVideo.srcObject = null;
-                };
+            // Replace the current video track in the peer connection
+            const videoTrack = localStream.getVideoTracks()[0];
+            const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+            if (sender) {
+                sender.replaceTrack(videoTrack);
             }
         });
     </script>
