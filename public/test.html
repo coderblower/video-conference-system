@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Screen Sharing</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Screen Sharing Example</h1>
+    <button id="joinRoom">Join Room</button>
+    <input id="roomId" type="text" placeholder="Enter Room ID" />
+    <div id="videoContainer"></div> <!-- Uncommented the video container -->
+
+    <script>
+        let localStream;
+        let peerConnections = {};
+        let roomId; // Ensure roomId is accessible globally
+
+        // Connect to the Socket.IO server
+        const socket = io('http://localhost:3000'); // Replace with your server URL and port
+
+        // Listen for connection
+        socket.on('connect', () => {
+            console.log(`Connected to server with ID: ${socket.id}`);
+        });
+
+        // Get screen sharing media
+        async function getUserMedia() {
+            try {
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); // Only screen sharing
+                console.log('Access to screen sharing granted.');
+
+                // Display local stream
+                const localVideo = document.createElement('video');
+                localVideo.srcObject = localStream;
+                localVideo.autoplay = true;
+                localVideo.muted = true; // Mute local video
+                localVideo.style.border = "2px solid green";
+
+                // Append local video to the body or specific container
+                document.body.appendChild(localVideo); // Make sure local video is visible
+            } catch (err) {
+                console.error('Error accessing screen sharing:', err);
+            }
+        }
+
+        // Create a peer connection
+        function createPeerConnection(userId) {
+            const peerConnection = new RTCPeerConnection();
+        
+            // Add local tracks safely
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    try {
+                        peerConnection.addTrack(track, localStream);
+                    } catch (error) {
+                        console.error("Error adding track:", error);
+                    }
+                });
+            } else {
+                console.warn("Local stream is not available.");
+            }
+        
+            // Handle ICE candidates
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', roomId, event.candidate, socket.id);
+                }
+            };
+        
+            // Handle new remote streams
+            peerConnection.ontrack = event => {
+                const remoteVideo = document.createElement('video');
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideo.autoplay = true;
+                remoteVideo.style.border = "2px solid red"; // Optional styling for remote video
+                document.getElementById('videoContainer').appendChild(remoteVideo); // Append remote video
+            };
+        
+            peerConnections[userId] = peerConnection;
+            return peerConnection;
+        }
+
+        // Listen for WebRTC signaling events
+        socket.on('offer', async (userId, offer) => {
+
+            console.log(userId, offer); 
+
+            
+            if (!userId || !offer) {
+                console.error("Invalid offer received:", { userId, offer });
+                return;
+            }
+            if (!offer || !offer.type || !offer.sdp) {
+                console.error("Invalid offer received:", offer);
+                return;
+            }
+            console.log(`Received offer from ${userId}`);
+            const peerConnection = createPeerConnection(userId);
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        
+                // Create and send an answer
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                socket.emit('answer', roomId, answer, socket.id);
+            } catch (error) {
+                console.error("Error handling offer:", error);
+            }
+        });
+        
+
+        socket.on('answer', async (roomId, userId, answer) => {
+            console.log('Received answer from', userId);
+            console.log('Room ID:', roomId);
+            console.log('Answer received:', answer);
+        
+            // Ensure the answer contains the necessary fields
+            if (!answer || !answer.type || !answer.sdp) {
+                console.error('Invalid answer received:', answer);
+                return;
+            }
+        
+            // Check if the peerConnection exists for the given userId
+            const peerConnection = peerConnections[userId];
+            if (!peerConnection) {
+                console.error(`No peer connection found for user ${userId}`);
+                console.log("Existing peerConnections:", peerConnections);
+                return;
+            }
+        
+            console.log("Peer Connection State:", peerConnection.connectionState);
+        
+            try {
+                // Validate the answer object
+                const remoteDescription = new RTCSessionDescription(answer);
+                console.log("Validated RTCSessionDescription:", remoteDescription);
+        
+                // Set the remote description for the peer connection
+                await peerConnection.setRemoteDescription(remoteDescription);
+                console.log(`Remote description set successfully for user ${userId}`);
+            } catch (error) {
+                console.error('Error setting remote description:', error);
+                console.log("Peer Connection Details:", peerConnection);
+                console.log("Answer Details:", answer);
+            }
+        });
+        
+
+        socket.on('ice-candidate', (userId, candidate) => {
+            if (!candidate || !candidate.candidate) {
+                console.error("Invalid ICE candidate received:", candidate);
+                return;
+            }
+
+            if (!userId || !candidate) {
+                console.error("Invalid ICE candidate received:", { userId, candidate });
+                return;
+            }
+
+            console.log(`Received ICE candidate from ${userId}`);
+            const peerConnection = peerConnections[userId];
+            if (peerConnection) {
+                try {
+                    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (error) {
+                    console.error("Error adding ICE candidate:", error);
+                }
+            }
+        });
+
+        // Emit an offer when joining a room
+        document.getElementById('joinRoom').addEventListener('click', async () => {
+            roomId = document.getElementById('roomId').value.trim(); // Use global roomId
+            if (!localStream) await getUserMedia();
+
+            if (roomId) {
+                // Join the room
+                socket.emit('join-room', roomId);
+                console.log(`Joining room: ${roomId}`);
+                
+                socket.emit('fetch-users-in-room', roomId);
+
+                // Handle new user connection
+                socket.on('user-connected', async (userId) => {
+                    console.log(userId)
+                    const peerConnection = createPeerConnection(userId);
+                
+                    // Create and send an offer
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    
+                    socket.emit('offer', roomId, { offer, userId });
+                
+                    // When the remote stream is received, create a new video element for the remote user
+                    peerConnection.ontrack = (event) => {
+
+                        console.log(event, 'fired')
+                        const remoteVideo = document.createElement('video');
+                        remoteVideo.srcObject = event.streams[0];
+                        remoteVideo.autoplay = true;
+                        remoteVideo.style.border = "2px solid red"; // Optional style for remote video
+                        remoteVideo.setAttribute('data-user-id', userId); // Store userId in the video element for identification
+                        document.getElementById('videoContainer').appendChild(remoteVideo); // Append remote video
+                    };
+                });
+
+                socket.on('existing-users', (users) => {
+                    console.log('Existing users in the room:', users);
+                    users.forEach(async (userId) => {
+                        console.log(roomId, 'room');
+                        // For each existing user, create a peer connection and get their stream
+                        const peerConnection = createPeerConnection(userId);
+                        const offer = await peerConnection.createOffer();
+                        await peerConnection.setLocalDescription(offer);
+                        socket.emit('offer', roomId, { offer, userId });
+        
+                        // Set up track event to show their video
+                        peerConnection.ontrack = (event) => {
+                            const remoteVideo = document.createElement('video');
+                            remoteVideo.srcObject = event.streams[0];
+                            remoteVideo.autoplay = true;
+                            remoteVideo.style.border = "2px solid red";
+                            remoteVideo.setAttribute('data-user-id', userId);
+                            document.getElementById('videoContainer').appendChild(remoteVideo); // Append remote video
+                        };
+                    });
+                });
+
+                // Handle user disconnection
+                socket.on('user-disconnected', (userId) => {
+                    console.log(`User disconnected: ${userId}`);
+                    if (peerConnections[userId]) {
+                        peerConnections[userId].close();
+                        delete peerConnections[userId];
+                    }
+                    // Remove remote video element
+                    const remoteVideo = document.querySelector(`video[data-user-id="${userId}"]`);
+                    if (remoteVideo) remoteVideo.remove();
+                });
+            } else {
+                alert('Please enter a valid room ID.');
+            }
+        });
+    </script>
+</body>
+</html>
