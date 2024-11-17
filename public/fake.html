@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Sharing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #screenVideo {
+            width: 80%;
+            margin: 10px auto;
+            display: block;
+        }
+        .remoteVideo {
+            width: 30%;
+            margin: 10px;
+        }
+        #remoteVideos {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Screen Sharing</h1>
+    <button id="shareScreen">Share Screen</button>
+    <video id="screenVideo" autoplay muted></video>
+    <div id="remoteVideos"></div>
+
+    <script src="https://cdn.socket.io/4.1.3/socket.io.min.js"></script>
+    <script>
+        const socket = io(); // Connect to the signaling server
+        const roomId = "screen-sharing-room"; // Shared room ID
+        const screenVideo = document.getElementById("screenVideo");
+        const remoteVideos = document.getElementById("remoteVideos");
+        const shareScreenButton = document.getElementById("shareScreen");
+
+        let screenStream;
+        const peerConnections = {}; // Store peer connections by userId
+        const servers = {
+            iceServers: [
+                {
+                    urls: 'stun:stun.l.google.com:19302'
+                }
+            ]
+        };
+
+        // Join the room when the page loads
+        socket.emit('join-room', roomId);
+
+        // Share the screen
+      // Screen sharing functionality
+shareScreenButton.addEventListener('click', async () => {
+    try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        screenVideo.srcObject = screenStream;
+
+        // Notify others in the room
+        socket.emit('start-screen-share', { roomId });
+
+        // Add screen stream to all peer connections
+        const screenTrack = screenStream.getTracks()[0];
+
+        // Loop through all peer connections and replace the video track if necessary
+        for (const userId in peerConnections) {
+            const peerConnection = peerConnections[userId];
+
+            // Find the sender with the video track
+            const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+
+            if (sender) {
+                // Replace the track only if a video sender exists
+                sender.replaceTrack(screenTrack);
+            } else {
+                console.log(`No video sender found for ${userId}`);
+            }
+        }
+
+        // Stop sharing when the screen sharing track ends
+        screenTrack.onended = () => {
+            stopScreenShare();
+        };
+    } catch (error) {
+        console.error("Error sharing the screen:", error);
+    }
+});
+
+        // Handle new user connection
+        socket.on("user-connected", (userId) => {
+            console.log("User connected:", userId);
+            createPeerConnection(userId);
+
+            // Add screen stream tracks to the new peer connection
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => peerConnections[userId].addTrack(track, screenStream));
+            }
+        });
+
+        // Handle user disconnection
+        socket.on("user-disconnected", (userId) => {
+            console.log("User disconnected:", userId);
+            if (peerConnections[userId]) {
+                peerConnections[userId].close();
+                delete peerConnections[userId];
+                const remoteVideo = document.getElementById(userId);
+                if (remoteVideo) remoteVideo.remove();
+            }
+        });
+
+        // Create a new peer connection
+        function createPeerConnection(userId) {
+            const peerConnection = new RTCPeerConnection(servers);
+            peerConnections[userId] = peerConnection;
+
+            // Handle remote tracks
+            peerConnection.ontrack = (event) => {
+                console.log(event)
+                if (!document.getElementById(userId)) {
+                    const remoteVideo = document.createElement("video");
+                    remoteVideo.id = userId;
+                    remoteVideo.classList.add("remoteVideo");
+                    remoteVideo.autoplay = true;
+                    remoteVideos.appendChild(remoteVideo);
+                }
+                const remoteVideo = document.getElementById(userId);
+                remoteVideo.srcObject = event.streams[0];
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit("message", { roomId, candidate: event.candidate, to: userId });
+                }
+            };
+
+            return peerConnection;
+        }
+
+        // Handle signaling messages
+        socket.on("message", async (data) => {
+            const { from, offer, answer, candidate } = data;
+
+            if (offer) {
+                const peerConnection = createPeerConnection(from);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.emit("message", { roomId, answer, to: from });
+            } else if (answer) {
+                await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+            } else if (candidate) {
+                await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        });
+
+        // Stop screen sharing
+        function stopScreenShare() {
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+                socket.emit('stop-screen-share', { roomId });
+            }
+        }
+    </script>
+</body>
+</html>
