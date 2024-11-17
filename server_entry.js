@@ -32,7 +32,7 @@ app.use('/api/auth', authRoutes);
 // app.use('/api/room', roomRoutes);
 
 // Create HTTPS server and set up WebSocket
-const server = http.createServer(options, app);
+const server = http.createServer(app);
 const io = setupSocket(server);
 
 // Start the server
