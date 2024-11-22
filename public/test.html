@@ -65,12 +65,13 @@
             // Handle ICE candidates
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
-                    socket.emit('ice-candidate', roomId, event.candidate, socket.id);
+                    socket.emit('ice-candidate', { roomId: roomId, candidate: event.candidate, userId: socket.id });
                 }
             };
         
             // Handle new remote streams
             peerConnection.ontrack = event => {
+                console.log(event, 'works ')
                 const remoteVideo = document.createElement('video');
                 remoteVideo.srcObject = event.streams[0];
                 remoteVideo.autoplay = true;
@@ -112,44 +113,44 @@
         });
         
 
+       
+     
         socket.on('answer', async (roomId, userId, answer) => {
-            console.log('Received answer from', userId);
-            console.log('Room ID:', roomId);
-            console.log('Answer received:', answer);
-        
-            // Ensure the answer contains the necessary fields
-            if (!answer || !answer.type || !answer.sdp) {
-                console.error('Invalid answer received:', answer);
-                return;
-            }
-        
-            // Check if the peerConnection exists for the given userId
-            const peerConnection = peerConnections[userId];
-            if (!peerConnection) {
-                console.error(`No peer connection found for user ${userId}`);
-                console.log("Existing peerConnections:", peerConnections);
-                return;
-            }
-        
-            console.log("Peer Connection State:", peerConnection.connectionState);
-        
-            try {
-                // Validate the answer object
-                const remoteDescription = new RTCSessionDescription(answer);
-                console.log("Validated RTCSessionDescription:", remoteDescription);
-        
-                // Set the remote description for the peer connection
-                await peerConnection.setRemoteDescription(remoteDescription);
-                console.log(`Remote description set successfully for user ${userId}`);
-            } catch (error) {
-                console.error('Error setting remote description:', error);
-                console.log("Peer Connection Details:", peerConnection);
-                console.log("Answer Details:", answer);
-            }
-        });
-        
+    console.log('Received answer from:', userId);
+    console.log('Answer object:', answer);
+
+    // Ensure the answer is valid
+    if (!answer || !answer.type || !answer.sdp) {
+        console.error('Invalid answer received:', answer);
+        return;
+    }
+
+    const peerConnection = peerConnections[userId];
+    if (!peerConnection) {
+        console.error(`No peer connection found for user ${userId}`);
+        return;
+    }
+
+    console.log("Signaling State before setting remote description:", peerConnection.signalingState);
+
+    try {
+        const remoteDescription = new RTCSessionDescription(answer);
+        console.log("Validated RTCSessionDescription:", remoteDescription);
+
+        // Set the remote description
+        await peerConnection.setRemoteDescription(remoteDescription);
+
+        console.log(`Remote description set successfully for user ${userId}`);
+    } catch (error) {
+        console.error("Error in setting remote description:", error);
+        console.log("Signaling State after error:", peerConnection.signalingState);
+        console.log("Answer Details:", answer);
+    }
+});
+
 
         socket.on('ice-candidate', (userId, candidate) => {
+            console.log('Received ICE candidate from', userId, candidate);
             if (!candidate || !candidate.candidate) {
                 console.error("Invalid ICE candidate received:", candidate);
                 return;
@@ -219,6 +220,7 @@
         
                         // Set up track event to show their video
                         peerConnection.ontrack = (event) => {
+                            console.log(event, 'works ');
                             const remoteVideo = document.createElement('video');
                             remoteVideo.srcObject = event.streams[0];
                             remoteVideo.autoplay = true;

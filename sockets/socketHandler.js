@@ -1,5 +1,7 @@
 const socketIo = require('socket.io');
 
+let rooms = {};
+
 function setupSocket(server) {
     const io = socketIo(server);
 

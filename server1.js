@@ -71,9 +71,10 @@ io.on('connection', (socket) => {
             }
         });
 
-        socket.on('ice-candidate', (candidate) => {
+        socket.on('ice-candidate', (data) => {
+            const { roomId, candidate, userId } = data;
             console.log(`ICE candidate received in room ${roomId} from ${socket.id}`);
-            socket.to(roomId).emit('ice-candidate', socket.id, candidate);
+            io.to(roomId).emit('ice-candidate', userId, candidate);
         });
 
         // Handle user disconnection
