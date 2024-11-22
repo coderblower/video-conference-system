@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Call with Screen Sharing Only</title>
+    <title>Video Call with Screen Sharing (Multi-User)</title>
     <style>
         video {
             width: 45%;
@@ -12,17 +12,14 @@
         #localVideo {
             border: 2px solid black;
         }
-        #remoteVideo {
-            border: 2px solid green;
-        }
     </style>
 </head>
 <body>
-    <h1>Video Call with Screen Sharing Only</h1>
+    <h1>Video Call with Screen Sharing (Multi-User)</h1>
     <div>
         <video id="localVideo" autoplay muted></video>
-        <video id="remoteVideo" autoplay></video>
     </div>
+    <div id="remoteVideosContainer"></div>
     <div>
         <button id="startCall">Start Call</button>
         <button id="shareScreen">Share Screen</button>
@@ -34,14 +31,14 @@
         const roomId = 'test-room'; // Room ID for the call
 
         const localVideo = document.getElementById('localVideo');
-        const remoteVideo = document.getElementById('remoteVideo');
+        const remoteVideosContainer = document.getElementById('remoteVideosContainer');
         const startCallButton = document.getElementById('startCall');
         const shareScreenButton = document.getElementById('shareScreen');
 
         let localStream;
-        let remoteStream;
-        let peerConnection;
         let screenStream;
+        const peerConnections = {}; // Map of peer connections per user
+        const remoteVideos = {}; // Map of video elements per user
 
         const servers = {
             iceServers: [
@@ -54,77 +51,108 @@
         // Join the room when the page loads
         socket.emit('join-room', roomId);
 
-        // Start the video call (only for screen sharing)
-        startCallButton.addEventListener('click', startCall);
-        async function startCall() {
-            // Start the screen sharing without starting the camera
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            localVideo.srcObject = screenStream;
+        // Handle new user joining
+        socket.on('new-user', (userId) => {
+            console.log(`New user joined: ${userId}`);
+            setupPeerConnection(userId);
+        });
 
-            // Create the peer connection
-            peerConnection = new RTCPeerConnection(servers);
+        // Remove user when they leave
+        socket.on('user-left', (userId) => {
+            console.log(`User left: ${userId}`);
+            if (peerConnections[userId]) {
+                peerConnections[userId].close();
+                delete peerConnections[userId];
+            }
+            if (remoteVideos[userId]) {
+                remoteVideosContainer.removeChild(remoteVideos[userId]);
+                delete remoteVideos[userId];
+            }
+        });
 
-            // Add screen stream to the peer connection
-            screenStream.getTracks().forEach(track => peerConnection.addTrack(track, screenStream));
+        // Start the video call
+        startCallButton.addEventListener('click', async () => {
+            if (!localStream) {
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            }
+            localVideo.srcObject = localStream;
 
-            // Set up remote stream handling
-            peerConnection.ontrack = (event) => {
-                if (event.streams && event.streams[0]) {
-                    remoteStream = event.streams[0];
-                    remoteVideo.srcObject = remoteStream;
-                }
-            };
-
-            // Handle ICE candidate exchange
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('message', { roomId, candidate: event.candidate });
-                }
-            };
-
-            // Create and send offer
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('message', { roomId, offer });
-        }
+            // Notify others you're ready
+            socket.emit('ready', roomId);
+        });
 
         // Handle incoming messages (offer/answer/ICE candidates)
         socket.on('message', async (data) => {
-            if (data.offer) {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const { from, offer, answer, candidate } = data;
 
-                // Create answer and send back
+            if (offer) {
+                console.log('Received offer from', from);
+                const peerConnection = setupPeerConnection(from);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
-                socket.emit('message', { roomId, answer });
-            } else if (data.answer) {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } else if (data.candidate) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                socket.emit('message', { roomId, to: from, answer });
+            } else if (answer) {
+                console.log('Received answer from', from);
+                if (peerConnections[from]) {
+                    await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+                }
+            } else if (candidate) {
+                console.log('Received ICE candidate from', from);
+                if (peerConnections[from]) {
+                    await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                }
             }
         });
 
         // Screen sharing functionality
-        shareScreenButton.addEventListener('click', async () => {
-            // If screen sharing is not active, start it
-            if (!screenStream) {
-                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                localVideo.srcObject = screenStream;
+       
 
-                // Replace the local video track with the screen sharing track
-                const screenTrack = screenStream.getTracks()[0];
-                peerConnection.getSenders().forEach(sender => {
-                    if (sender.track.kind === 'video') {
-                        sender.replaceTrack(screenTrack);
-                    }
+        function setupPeerConnection(userId) {
+            const peerConnection = new RTCPeerConnection(servers);
+
+            // Add local stream tracks
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
                 });
-
-                screenTrack.onended = () => {
-                    // Automatically end the screen sharing if the user stops it
-                    localVideo.srcObject = null;
-                };
             }
-        });
+
+            // Handle remote track
+            peerConnection.ontrack = (event) => {
+                console.log(`Received track from user: ${userId}`);
+                if (!remoteVideos[userId]) {
+                    remoteVideos[userId] = createRemoteVideoElement(userId);
+                }
+                remoteVideos[userId].srcObject = event.streams[0];
+            };
+
+            // Handle ICE candidate
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('message', {
+                        roomId,
+                        to: userId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            peerConnections[userId] = peerConnection;
+            return peerConnection;
+        }
+        // Create a new video element for a remote user
+        function createRemoteVideoElement(userId) {
+            const video = document.createElement('video');
+            video.id = `remoteVideo-${userId}`;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.style.border = '2px solid green';
+            video.style.width = '45%';
+            remoteVideosContainer.appendChild(video);
+            return video;
+        }
     </script>
 </body>
 </html>
