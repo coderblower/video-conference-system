@@ -30,20 +30,23 @@
         const socket = io();
         const roomId = 'test-room'; // Room ID for the call
 
-        const localVideo = document.getElementById('localVideo');
+        var localVideo = document.getElementById('localVideo');
         const remoteVideosContainer = document.getElementById('remoteVideosContainer');
         const startCallButton = document.getElementById('startCall');
         const shareScreenButton = document.getElementById('shareScreen');
 
-        let localStream;
-        let screenStream;
+        var localStream;
         const peerConnections = {}; // Map of peer connections per user
         const remoteVideos = {}; // Map of video elements per user
 
+        // ICE servers configuration
         const servers = {
             iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }, // Public STUN server
                 {
-                    urls: 'stun:stun.l.google.com:19302'
+                    urls: 'turn:your.turn.server:3478', // Replace with your TURN server
+                    username: 'yourUsername', // Replace with your TURN credentials
+                    credential: 'yourPassword'
                 }
             ]
         };
@@ -54,7 +57,20 @@
         // Handle new user joining
         socket.on('new-user', (userId) => {
             console.log(`New user joined: ${userId}`);
-            setupPeerConnection(userId);
+            const peerConnection = setupPeerConnection(userId);
+
+            // Create and send offer to the new peer
+            peerConnection.createOffer().then((offer) => {
+                return peerConnection.setLocalDescription(offer);
+            }).then(() => {
+                socket.emit('message', {
+                    roomId,
+                    to: userId,
+                    offer: peerConnection.localDescription
+                });
+            }).catch((error) => {
+                console.error('Error creating an offer:', error);
+            });
         });
 
         // Remove user when they leave
@@ -72,13 +88,19 @@
 
         // Start the video call
         startCallButton.addEventListener('click', async () => {
-            if (!localStream) {
-                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            }
-            localVideo.srcObject = localStream;
+            try {
+                if (!localStream) {
+                    
+                    localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    
+                }
+                localVideo.srcObject = localStream;
 
-            // Notify others you're ready
-            socket.emit('ready', roomId);
+                // Notify others you're ready
+                socket.emit('ready', roomId);
+            } catch (error) {
+                console.error('Error accessing media devices:', error);
+            }
         });
 
         // Handle incoming messages (offer/answer/ICE candidates)
@@ -94,7 +116,7 @@
                 await peerConnection.setLocalDescription(answer);
                 socket.emit('message', { roomId, to: from, answer });
             } else if (answer) {
-                console.log('Received answer from', from);
+                console.log('Received answer from', from, peerConnections[from]);
                 if (peerConnections[from]) {
                     await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
                 }
@@ -107,11 +129,41 @@
         });
 
         // Screen sharing functionality
-       
+        shareScreenButton.addEventListener('click', async () => {
+            try {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const screenTrack = screenStream.getVideoTracks()[0];
+
+                // Replace video track in peer connections
+                Object.values(peerConnections).forEach((peerConnection) => {
+                    const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(screenTrack);
+                    }
+                });
+
+                // Show the screen share on local video
+                localVideo.srcObject = screenStream;
+
+                // Revert to webcam when screen sharing stops
+                screenTrack.onended = () => {
+                    Object.values(peerConnections).forEach((peerConnection) => {
+                        const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+                        if (sender) {
+                            sender.replaceTrack(localStream.getVideoTracks()[0]);
+                        }
+                    });
+                    localVideo.srcObject = localStream;
+                };
+            } catch (error) {
+                console.error('Error sharing screen:', error);
+            }
+        });
 
         function setupPeerConnection(userId) {
             const peerConnection = new RTCPeerConnection(servers);
 
+            console.log(localStream, 'check local stream ')
             // Add local stream tracks
             if (localStream) {
                 localStream.getTracks().forEach(track => {
@@ -131,6 +183,7 @@
             // Handle ICE candidate
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
+                    console.log('Sending ICE candidate:', event.candidate);
                     socket.emit('message', {
                         roomId,
                         to: userId,
@@ -142,6 +195,7 @@
             peerConnections[userId] = peerConnection;
             return peerConnection;
         }
+
         // Create a new video element for a remote user
         function createRemoteVideoElement(userId) {
             const video = document.createElement('video');
