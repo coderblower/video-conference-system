@@ -37,7 +37,7 @@
 
         var localStream;
         const peerConnections = {}; // Map of peer connections per user
-        const remoteVideos = {}; // Map of video elements per user
+        const remoteVideos = {}; // Map of video elementhttp://localhost:3000/s per user
 
         // ICE servers configuration
         const servers = {
@@ -55,9 +55,9 @@
         socket.emit('join-room', roomId);
 
         // Handle new user joining
-        socket.on('new-user', (userId) => {
+        socket.on('new-user', async (userId) => {
             console.log(`New user joined: ${userId}`);
-            const peerConnection = setupPeerConnection(userId);
+            const peerConnection = await setupPeerConnection(userId);
 
             // Create and send offer to the new peer
             peerConnection.createOffer().then((offer) => {
@@ -109,7 +109,7 @@
 
             if (offer) {
                 console.log('Received offer from', from);
-                const peerConnection = setupPeerConnection(from);
+                const peerConnection = await setupPeerConnection(from);
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
                 const answer = await peerConnection.createAnswer();
@@ -160,16 +160,43 @@
             }
         });
 
-        function setupPeerConnection(userId) {
+       async function setupPeerConnection(userId) {
             const peerConnection = new RTCPeerConnection(servers);
 
-            console.log(localStream, 'check local stream ')
-            // Add local stream tracks
-            if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
-                });
-            }
+        if(localStream){
+            await localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        } else{
+
+        
+            try {
+        // Get screen sharing stream
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+
+        // Load screen stream into local video element
+        
+        if (localVideo) {
+            localVideo.srcObject = screenStream;
+        }
+
+        console.log(screenStream, 'Screen sharing stream loaded');
+
+        // Add screen stream tracks to peer connection
+        screenStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, screenStream);
+        });
+
+        // Store the stream globally if needed for other purposes
+        localStream = screenStream;
+
+    } catch (error) {
+        console.error('Error accessing screen sharing stream:', error);
+        return null; // Abort setup if screen sharing fails
+    }
+
+    }
+
+
+           
 
             // Handle remote track
             peerConnection.ontrack = (event) => {
