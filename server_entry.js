@@ -36,6 +36,6 @@ const server = http.createServer(app);
 const io = setupSocket(server);
 
 // Start the server
-server.listen(3000, '127.0.0.1',  () => {
-    console.log('Server running on http://127.0.0.1:3000');
+server.listen(3000, () => {
+    console.log('Server running on http://localhost:3000');
 });
