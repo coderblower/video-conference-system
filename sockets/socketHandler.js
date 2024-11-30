@@ -1,14 +1,12 @@
 const socketIo = require('socket.io');
 
 function setupSocket(server) {
-    const io = socketIo(server, {
+    const io = new Server(server, {
         cors: {
-            origin: "https://meeting.mges.global",  // Replace with your frontend URL
-            methods: ["GET", "POST"],              // Allowed HTTP methods
-            allowedHeaders: ["my-custom-header"],  // Optionally specify custom headers
-            credentials: true                      // Allow credentials (cookies, authorization headers, etc.)
+          origin: "*", // Adjust to allow specific origins for security
+          methods: ["GET", "POST"]
         }
-    });
+      });
 
     // Store users in rooms
     const rooms = {};

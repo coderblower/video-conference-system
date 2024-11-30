@@ -1,6 +1,8 @@
 
 
-const socket = io('wss://meeting.mges.global');
+const socket = io('https://meeting.mges.global', {
+    transports: ['websocket'], // Use WebSocket transport explicitly
+});
 const roomId = 'test-room'; // Room ID for the call
 
 var localVideo = document.getElementById('localVideo');
