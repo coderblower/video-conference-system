@@ -1,4 +1,5 @@
 
+
 const socket = io();
 const roomId = 'test-room'; // Room ID for the call
 
@@ -137,39 +138,48 @@ shareScreenButton.addEventListener('click', async () => {
 async function setupPeerConnection(userId) {
     const peerConnection = new RTCPeerConnection(servers);
 
-if(localStream){
-    await localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-} else{
-
-
     try {
-// Get screen sharing stream
-const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        // Check if `localStream` already exists
+        if (localStream) {
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+            console.log('Existing local stream tracks added to peer connection.');
+            return;
+        }
 
-// Load screen stream into local video element
+        // Check if the stream is marked as 'no stream'
+        if (localStream === 'no stream') {
+            displayAvatar();
+            console.log('Displaying avatar as no stream is available.');
+            return;
+        }
 
-if (localVideo) {
-    localVideo.srcObject = screenStream;
-}
+        // Request a new stream
+        const stream = await requestForStream();
 
-console.log(screenStream, 'Screen sharing stream loaded');
+        if (!stream) {
+            console.log('No stream available. Displaying avatar instead.');
+            displayAvatar();
+            localStream = 'no stream'; // Mark as no stream to avoid redundant requests
+            return;
+        }
 
-// Add screen stream tracks to peer connection
-screenStream.getTracks().forEach(track => {
-    peerConnection.addTrack(track, screenStream);
-});
+        // Assign the stream to the local video element if it exists
+        if (localVideo) {
+            localVideo.srcObject = stream;
+            localVideo.muted = true; // Prevent audio feedback
+            console.log('Local stream loaded into video element.');
+        }
 
-// Store the stream globally if needed for other purposes
-localStream = screenStream;
+        // Add the stream tracks to the peer connection
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+        console.log('New stream tracks added to peer connection.');
 
-} catch (error) {
-console.error('Error accessing screen sharing stream:', error);
-return null; // Abort setup if screen sharing fails
-}
+        // Store the stream globally
+        localStream = stream;
 
-}
-
-
+    } catch (error) {
+        console.error('Error in handling stream:', error);
+    }
    
 
     // Handle remote track
@@ -210,4 +220,59 @@ function createRemoteVideoElement(userId) {
    
     $remoteVideosContainer.append($slide);
     return $videoElement;
+}
+
+async function requestForStream() {
+    try {
+        // Check for available devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        let hasVideo = false;
+        let hasAudio = false;
+
+        // Loop through devices to check for video and audio
+        devices.forEach(device => {
+            if (device.kind === 'audioinput') {
+                hasAudio = true;
+            }
+            if (device.kind === 'videoinput') {
+                hasVideo = true;
+            }
+        });
+
+        // Set the media constraints based on available devices
+        const constraints = {
+            audio: hasAudio,   // Only request audio if audio device exists
+            video: hasVideo    // Only request video if video device exists
+        };
+
+        // Request the media stream with the selected constraints
+        if (hasAudio || hasVideo) {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            // Handle the case where only audio is available
+            if (!hasVideo && hasAudio) {
+                console.log('Only audio stream available');
+                // You can display a remote avatar here for users without video
+            }
+
+            // Handle the stream as needed
+            return stream; // Return the stream to the caller
+        } else {
+            console.log('No audio or video available');
+            return null; // No devices available
+        }
+    } catch (err) {
+        console.error('Error getting user media: ', err);
+        return null; // Return null in case of error
+    }
+}
+
+
+function  displayAvatar(){
+    if (localVideo) {
+        localVideo.srcObject = null; // Clear any existing stream
+        localVideo.poster = './avatar.png'; // Set the avatar image
+        localVideo.style.background = 'url(./avatar-bg.webp) center / cover no-repeat';
+        localVideo.style.display = 'block'; // Ensure the video tag is visible
+    }
 }
