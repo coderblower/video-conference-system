@@ -1,7 +1,7 @@
-const socketIo = require('socket.io');
+const {Server} = require('socket.io');
 
 function setupSocket(server) {
-    const io = new Server(server, {
+    const io = Server(server, {
         cors: {
           origin: "*", // Adjust to allow specific origins for security
           methods: ["GET", "POST"]
