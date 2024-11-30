@@ -1,6 +1,6 @@
 
 
-const socket = io();
+const socket = io('wss://meeting.mges.global');
 const roomId = 'test-room'; // Room ID for the call
 
 var localVideo = document.getElementById('localVideo');
