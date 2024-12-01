@@ -254,7 +254,8 @@ async function addLocalStream(peerConnection){
        if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         console.log('Existing local stream tracks added to peer connection.');
-        return;
+
+        return peerConnection;
     }
 
     // Check if the stream is marked as 'no stream'
