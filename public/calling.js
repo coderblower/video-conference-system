@@ -84,6 +84,7 @@ startCallButton.addEventListener('click', async () => {
 socket.on('message', async (data) => {
     const { from, offer, answer, candidate } = data;
 
+    
     if (offer) {
         console.log('Received offer from', from);
         const peerConnection = await setupPeerConnection(from);
