@@ -87,24 +87,52 @@ socket.on('message', async (data) => {
     
     if (offer) {
         console.log('Received offer from', from);
-        const peerConnection = await setupPeerConnection(from);
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        if (!peerConnections[from]) {
+            peerConnections[from] = await setupPeerConnection(from);
+        }
 
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('message', { roomId, to: from, answer });
+        const peerConnection = peerConnections[from];
+        console.log('store to my peefconnections form anther existing ', peerConnections[from])
+        if (peerConnection.signalingState === "stable") {
+            console.warn('PeerConnection already stable. Ignoring new offer.');
+            return;
+        }
+
+        try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('message', { roomId, to: from, answer });
+        } catch (error) {
+            console.error('Error processing offer:', error);
+        }
     } else if (answer) {
-        console.log('Received answer from', from, peerConnections[from]);
-        if (peerConnections[from]) {
-            await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+        console.log('Received answer from', from);
+        const peerConnection = peerConnections[from];
+
+        if (peerConnection?.signalingState === "have-local-offer") {
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            } catch (error) {
+                console.error('Error setting remote description for answer:', error);
+            }
+        } else {
+            console.warn('Answer received in invalid state:', peerConnection?.signalingState);
         }
     } else if (candidate) {
         console.log('Received ICE candidate from', from);
-        if (peerConnections[from]) {
-            await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+        const peerConnection = peerConnections[from];
+        if (peerConnection) {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+            }
         }
     }
 });
+
+
 
 // Screen sharing functionality
 shareScreenButton.addEventListener('click', async () => {
