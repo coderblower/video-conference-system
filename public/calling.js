@@ -1,7 +1,7 @@
 
 
-const socket = io('https://meeting.mges.global', {
-    transports: ['websocket'], // Use WebSocket transport explicitly
+const socket = io('wss://meeting.mges.global', {
+    transports: ['websocket', 'polling']
 });
 const roomId = 'test-room'; // Room ID for the call
 
