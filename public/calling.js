@@ -92,25 +92,27 @@ socket.on('message', async (data) => {
 
         const peerConnection = peerConnections[from];
         if (peerConnection.signalingState === "stable") {
-            try {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                socket.emit('message', { roomId, to: from, answer });
-            } catch (error) {
-                console.error('Error handling offer:', error);
-            }
-        } else {
-            console.warn('PeerConnection not in a stable state, skipping offer processing.');
+            console.warn('PeerConnection already stable. Ignoring new offer.');
+            return;
+        }
+
+        try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('message', { roomId, to: from, answer });
+        } catch (error) {
+            console.error('Error processing offer:', error);
         }
     } else if (answer) {
         console.log('Received answer from', from);
         const peerConnection = peerConnections[from];
+
         if (peerConnection?.signalingState === "have-local-offer") {
             try {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
             } catch (error) {
-                console.error('Error handling answer:', error);
+                console.error('Error setting remote description for answer:', error);
             }
         } else {
             console.warn('Answer received in invalid state:', peerConnection?.signalingState);
@@ -127,6 +129,7 @@ socket.on('message', async (data) => {
         }
     }
 });
+
 
 
 // Screen sharing functionality
