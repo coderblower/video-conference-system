@@ -143,7 +143,7 @@ async function setupPeerConnection(userId) {
     try {
     
         
-        addLocalStream();
+       await addLocalStream();
         
 
     } catch (error) {
@@ -249,7 +249,7 @@ function  displayAvatar(){
 
 
 
-function addLocalStream(){
+async function addLocalStream(){
        // Check if `localStream` already exists
        if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
