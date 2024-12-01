@@ -141,43 +141,10 @@ async function setupPeerConnection(userId) {
     const peerConnection = new RTCPeerConnection(servers);
 
     try {
-        // Check if `localStream` already exists
-        if (localStream) {
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-            console.log('Existing local stream tracks added to peer connection.');
-            return;
-        }
-
-        // Check if the stream is marked as 'no stream'
-        if (localStream === 'no stream') {
-            displayAvatar();
-            console.log('Displaying avatar as no stream is available.');
-            return;
-        }
-
-        // Request a new stream
-        const stream = await requestForStream();
-
-        if (!stream) {
-            console.log('No stream available. Displaying avatar instead.');
-            displayAvatar();
-            localStream = 'no stream'; // Mark as no stream to avoid redundant requests
-            return;
-        }
-
-        // Assign the stream to the local video element if it exists
-        if (localVideo) {
-            localVideo.srcObject = stream;
-            localVideo.muted = true; // Prevent audio feedback
-            console.log('Local stream loaded into video element.');
-        }
-
-        // Add the stream tracks to the peer connection
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-        console.log('New stream tracks added to peer connection.');
-
-        // Store the stream globally
-        localStream = stream;
+    
+        
+        addLocalStream();
+        
 
     } catch (error) {
         console.error('Error in handling stream:', error);
@@ -214,7 +181,7 @@ function createRemoteVideoElement(userId) {
     const $remoteVideosContainer = $('#remoteVideosContainer');
     console.dir($remoteVideosContainer);
     const $slide = $('<div class="swiper-slide"></div>');
-    const $videoElement = $(`<video id="remoteVideo-${userId}" ></video>`).attr('autoplay', true).attr('muted', true);
+    const $videoElement = $(`<video id="remoteVideo-${userId}" ></video>`).attr('autoplay', true).attr('muted', false);
     $videoElement[0].playsInline = true; 
 
     $slide.append($videoElement);
@@ -277,4 +244,46 @@ function  displayAvatar(){
         localVideo.style.background = 'url(./avatar-bg.webp) center / cover no-repeat';
         localVideo.style.display = 'block'; // Ensure the video tag is visible
     }
+}
+
+
+
+
+function addLocalStream(){
+       // Check if `localStream` already exists
+       if (localStream) {
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        console.log('Existing local stream tracks added to peer connection.');
+        return;
+    }
+
+    // Check if the stream is marked as 'no stream'
+    // if (localStream === 'no stream') {
+    //     displayAvatar();
+    //     console.log('Displaying avatar as no stream is available.');
+    //     return;
+    // }
+
+    // Request a new stream
+    const stream = await requestForStream();
+
+    if (!stream) {
+        console.log('No stream available. Displaying avatar instead.');
+        displayAvatar();
+        return;
+    }
+
+    // Assign the stream to the local video element if it exists
+    if (localVideo) {
+        localVideo.srcObject = stream;
+        localVideo.muted = false; // Prevent audio feedback
+        console.log('Local stream loaded into video element.');
+    }
+
+    // Add the stream tracks to the peer connection
+    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+    console.log('New stream tracks added to peer connection.');
+
+    // Store the stream globally
+    localStream = stream;
 }
