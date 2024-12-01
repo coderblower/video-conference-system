@@ -91,6 +91,7 @@ socket.on('message', async (data) => {
         }
 
         const peerConnection = peerConnections[from];
+        console.log('store to my peefconnections form anther existing ', peerConnections[from])
         if (peerConnection.signalingState === "stable") {
             console.warn('PeerConnection already stable. Ignoring new offer.');
             return;
