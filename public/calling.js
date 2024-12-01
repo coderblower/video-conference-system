@@ -138,12 +138,12 @@ shareScreenButton.addEventListener('click', async () => {
 });
 
 async function setupPeerConnection(userId) {
-    const peerConnection = new RTCPeerConnection(servers);
+    let peerConnection = new RTCPeerConnection(servers);
 
     try {
     
         
-       await addLocalStream();
+      peerConnection =  await addLocalStream(peerConnection);
         
 
     } catch (error) {
@@ -249,7 +249,7 @@ function  displayAvatar(){
 
 
 
-async function addLocalStream(){
+async function addLocalStream(peerConnection){
        // Check if `localStream` already exists
        if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -286,4 +286,6 @@ async function addLocalStream(){
 
     // Store the stream globally
     localStream = stream;
+
+    return peerConnection;
 }
