@@ -1,9 +1,9 @@
 import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import Main from "./components/Main";
-import Welcome from "./components/Welcome";
+import Main from "./Layout/Main";
+import Welcome from "./page/Welcome";
 
-import Room from "./components/room";
+import Room from "./page/Room";
 
 
 const App = () => {

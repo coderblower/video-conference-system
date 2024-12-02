@@ -1,6 +1,10 @@
 // App.js
 import React, { useState, useRef, useEffect } from "react";
 import io from "socket.io-client";
+import AudioCard from "../components/AudioCard";
+import VideoCard from "../components/VideoCard";
+
+
 
 // Socket connection
 const socket = io("https://meeting.mges.global", {
@@ -17,6 +21,7 @@ const ChatRoom = () => {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const peerConnectionsRef = useRef({});
     const [count, setCount] = useState('');
+    
     
 
     // ICE servers configuration
@@ -37,6 +42,11 @@ const ChatRoom = () => {
     useEffect(() => {
         
         socket.emit("join-room", roomId);
+
+
+        socket.on("first_in_room", async () =>{
+            console.log("First in room");
+        })
     
         socket.on("new-user", async (userId) => {
             console.log(`New user joined: ${userId}`);
@@ -276,10 +286,14 @@ const ChatRoom = () => {
         <div>
             <h1></h1>
             <p>{count}</p>
-            <div>
+            {/* <div>
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
-            </div>
-            
+            </div> */}
+
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+                 {[<AudioCard title= "saiful" description="world" />, <AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />, <VideoCard title="saiful" /> ]}
+           </div>
+
             <div id="remoteVideosContainer">
                 {Object.keys(remoteVideosRef.current).map((userId) => (
                     <div key={userId}>

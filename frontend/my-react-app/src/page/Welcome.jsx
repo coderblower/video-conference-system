@@ -1,15 +1,23 @@
 // App.js
 import React, { useState, useRef, useEffect } from "react";
 
-import ChatRoom from "../components/ChatRoom"
+import ChatRoom from "./ChatRoom"
 
-
+import { useNavigate } from 'react-router-dom';
 
 
 const Welcome = () => { 
     
     const [name, setName ] = useState('');
     const [submittedName, setSubmittedName] = useState('');
+    const navigate = useNavigate();
+
+
+    useEffect(()=>{
+        if(localStorage.getItem('name')){
+            navigate('/room')
+        }
+    })
 
 
 
@@ -40,7 +48,7 @@ const Welcome = () => {
                     setName('')
 
                     setTimeout(function(){
-                        
+                        navigate('room')
                     }, 2000)
                     }
          }>

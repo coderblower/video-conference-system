@@ -21,6 +21,7 @@ function setupSocket(server) {
             // Add user to room
             if (!rooms[roomId]) {
                 rooms[roomId] = [];
+                socket.to(socket.id).emit('first_in_room');
             }
             rooms[roomId].push(socket.id);
 
