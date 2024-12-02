@@ -45,6 +45,9 @@ const ChatRoom = () => {
 
 
         socket.on("first_in_room", async () =>{
+            const stream = await requestForStream();
+            setLocalStream(stream);
+            
             console.log("First in room");
         })
     
