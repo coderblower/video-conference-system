@@ -15,12 +15,12 @@ const roomId = "test-room"; // Room ID for the call
 
 const ChatRoom = () => {
     const localVideoRef = useRef(null);
-    const remoteVideosRef = useRef({});
+    const [remoteVideos, setRemoteVideos] = useState({});
     const [localStream, setLocalStream] = useState(null);
+    const [peerConnections, setPeerConnections ] = useState({})
     
     const [isScreenSharing, setIsScreenSharing] = useState(false);
-    const peerConnectionsRef = useRef({});
-    const [count, setCount] = useState('');
+    const [userName, setUserName] = useState(window.localStorage.getItem('name') || null);
     
     
 
@@ -49,9 +49,12 @@ const ChatRoom = () => {
             setLocalStream(stream);
             
             console.log("First in room");
+
+ 
         })
     
         socket.on("new-user", async (userId) => {
+            
             console.log(`New user joined: ${userId}`);
             const peerConnection = await setupPeerConnection(userId);
     
@@ -62,7 +65,7 @@ const ChatRoom = () => {
                 socket.emit("message", {
                     roomId,
                     to: userId,
-                    offer: peerConnection.localDescription,
+                    offer: peerConnection.localDescription
                 });
             }).catch((error) => {
                 console.error("Error creating an offer:", error);
@@ -71,17 +74,22 @@ const ChatRoom = () => {
     
         socket.on("user-left", (userId) => {
             console.log(`User left: ${userId}`);
-            if (peerConnectionsRef.current[userId]) {
-                peerConnectionsRef.current[userId].close();
-                delete peerConnectionsRef.current[userId];
-            }
-            if (remoteVideosRef.current[userId]) {
-                delete remoteVideosRef.current[userId];
-            }
+            
+            setRemoteVideos((prevVideos) => {
+                const newVideos = { ...prevVideos };
+                delete newVideos[userId];
+                return newVideos;
+            });
+
+            setRemoteVideos((prevPeer)=>{
+                const prevPeers = {...prevPeer};
+                delete prevPeers[userId]; 
+                return prevPeers;
+            })
         });
     
         socket.on("message", async (data) => {
-          const { from, offer, answer, candidate } = data;
+          const { from, offer, answer, candidate} = data;
       
           if (offer) {
               console.log("Received offer from", from);
@@ -100,14 +108,14 @@ const ChatRoom = () => {
               console.log("Received answer from", from);
               
               // Set the remote description only if it hasn't been set already
-              if (peerConnectionsRef.current[from] && peerConnectionsRef.current[from].signalingState !== 'stable') {
-                  await peerConnectionsRef.current[from].setRemoteDescription(new RTCSessionDescription(answer));
+              if (peerConnections[from] && peerConnections[from].signalingState !== 'stable') {
+                  await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
               }
           } else if (candidate) {
               console.log("Received ICE candidate from", from);
               
-              if (peerConnectionsRef.current[from]) {
-                  await peerConnectionsRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
+              if (peerConnections[from]) {
+                  await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
               }
           }
       });
@@ -145,10 +153,19 @@ const ChatRoom = () => {
             // Handle remote track
             peerConnection.ontrack = (event) => {
                 console.log(`Received track from user: ${userId}`);
-                if (!remoteVideosRef.current[userId]) {
-                    remoteVideosRef.current[userId] = createRemoteVideoElement(userId);
-                }
-                remoteVideosRef.current[userId].srcObject = event.streams[0];
+                if(!remoteVideos[userId]){
+
+                    setRemoteVideos((prevVideos) => ({
+                        ...prevVideos,
+                        [userId]: {
+                            userId: userId,
+                            stream: event.streams[0] // Assign a proper key, e.g., "stream"
+                        }
+                    }));
+                
+               }
+            
+                
             };
 
             // Handle ICE candidate
@@ -163,9 +180,10 @@ const ChatRoom = () => {
                 }
             };
 
-    
-                peerConnectionsRef.current[userId]  =  peerConnection;
-        
+
+           setPeerConnections((prev)=>({
+                ...prev, [userId]: peerConnection
+           }));
 
             return peerConnection;
         } catch (error) {
@@ -174,14 +192,7 @@ const ChatRoom = () => {
     };
 
     // Create remote video element
-    const createRemoteVideoElement = (userId) => {
-        const videoElement = document.createElement("video");
-        videoElement.autoplay = true;
-        videoElement.muted = false;
-        videoElement.playsInline = true;
-        videoElement.id = `remoteVideo-${userId}`;
-        return videoElement;
-    };
+
 
     // Request media stream
    const requestForStream = async  () => {
@@ -237,7 +248,7 @@ const ChatRoom = () => {
             const screenTrack = screenStream.getVideoTracks()[0];
 
             // Replace video track in peer connections
-            Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+            Object.values(peerConnections).forEach((peerConnection) => {
                 const sender = peerConnection.getSenders().find((s) => s.track.kind === "video");
                 if (sender) {
                     sender.replaceTrack(screenTrack);
@@ -255,7 +266,7 @@ const ChatRoom = () => {
                 setIsScreenSharing(false);
                 if (localStream) {
                     const videoTrack = localStream.getVideoTracks()[0];
-                    Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+                    Object.values(peerConnections).forEach((peerConnection) => {
                         const sender = peerConnection.getSenders().find((s) => s.track.kind === "video");
                         if (sender) {
                             sender.replaceTrack(videoTrack);
@@ -288,32 +299,26 @@ const ChatRoom = () => {
     return (
         <div>
             <h1></h1>
-            <p>{count}</p>
+            <p>{Object.keys(remoteVideos).length}</p>
+            <p>{Object.keys(peerConnections).length}</p>
             {/* <div>
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
             </div> */}
 
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
                  {[<AudioCard title= "saiful" description="world" />, <AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />, <VideoCard title="saiful" /> ]}
+                 {Object.keys(remoteVideos).map((userId) => (
+
+                    <AudioCard title={userId} />
+
+
+                ))}
            </div>
 
-            <div id="remoteVideosContainer">
-                {Object.keys(remoteVideosRef.current).map((userId) => (
-                    <div key={userId}>
-                        <video
-                            id={`remoteVideo-${userId}`}
-                            ref={(el) => {
-                                if (el && !remoteVideosRef.current[userId]) {
-                                    remoteVideosRef.current[userId] = el;
-                                }
-                            }}
-                            autoPlay
-                            playsInline
-                            style={{ width: "300px" }}
-                        />
-                    </div>
-                ))}
-            </div>
+
+           <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).length)}> Show users </button>
+
+            
         </div>
     );
 };
