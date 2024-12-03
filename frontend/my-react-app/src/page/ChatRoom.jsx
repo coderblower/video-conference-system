@@ -15,12 +15,12 @@ const roomId = "test-room"; // Room ID for the call
 
 const ChatRoom = () => {
     const localVideoRef = useRef(null);
-    const remoteVideosRef = useRef({});
+    const [remoteVideos, setRemoteVideos] = useState({});
     const [localStream, setLocalStream] = useState(null);
     
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const peerConnectionsRef = useRef({});
-    const [count, setCount] = useState('');
+    const [userName, setUserName] = useState(window.localStorage.getItem('name') || null);
     
     
 
@@ -41,7 +41,7 @@ const ChatRoom = () => {
 
     useEffect(() => {
         
-        socket.emit("join-room", roomId);
+        socket.emit("join-room", {roomId, userName});
 
 
         socket.on("first_in_room", async () =>{
@@ -49,11 +49,14 @@ const ChatRoom = () => {
             setLocalStream(stream);
             
             console.log("First in room");
+
+ 
         })
     
-        socket.on("new-user", async (userId) => {
+        socket.on("new-user", async ({userId, userName}) => {
+            
             console.log(`New user joined: ${userId}`);
-            const peerConnection = await setupPeerConnection(userId);
+            const peerConnection = await setupPeerConnection({userId, userName});
     
           
             peerConnection.createOffer().then((offer) => {
@@ -63,6 +66,7 @@ const ChatRoom = () => {
                     roomId,
                     to: userId,
                     offer: peerConnection.localDescription,
+                    userName
                 });
             }).catch((error) => {
                 console.error("Error creating an offer:", error);
@@ -75,18 +79,20 @@ const ChatRoom = () => {
                 peerConnectionsRef.current[userId].close();
                 delete peerConnectionsRef.current[userId];
             }
-            if (remoteVideosRef.current[userId]) {
-                delete remoteVideosRef.current[userId];
-            }
+            setRemoteVideos((prevVideos) => {
+                const newVideos = { ...prevVideos };
+                delete newVideos[userId];
+                return newVideos;
+            });
         });
     
         socket.on("message", async (data) => {
-          const { from, offer, answer, candidate } = data;
+          const { from, offer, answer, candidate, userName } = data;
       
           if (offer) {
               console.log("Received offer from", from);
               
-              const peerConnection = await setupPeerConnection(from);
+              const peerConnection = await setupPeerConnection({userId: from, userName});
               
               // Set the remote description first when receiving an offer
               await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -124,7 +130,7 @@ const ChatRoom = () => {
     
 
     // Setup Peer Connection
-    const setupPeerConnection = async (userId) => {
+    const setupPeerConnection = async ({userId, userName}) => {
         const peerConnection = new RTCPeerConnection(servers);
 
         try {
@@ -145,10 +151,17 @@ const ChatRoom = () => {
             // Handle remote track
             peerConnection.ontrack = (event) => {
                 console.log(`Received track from user: ${userId}`);
-                if (!remoteVideosRef.current[userId]) {
-                    remoteVideosRef.current[userId] = createRemoteVideoElement(userId);
+
+
+                if(!remoteVideos[userId]){
+                    setRemoteVideos((prevVideos) => ({
+                        ...prevVideos,
+                        [userId]: {stream:  event.streams[0], userName},
+                    }));
                 }
-                remoteVideosRef.current[userId].srcObject = event.streams[0];
+               
+            
+                
             };
 
             // Handle ICE candidate
@@ -164,7 +177,7 @@ const ChatRoom = () => {
             };
 
     
-                peerConnectionsRef.current[userId]  =  peerConnection;
+                
         
 
             return peerConnection;
@@ -174,14 +187,7 @@ const ChatRoom = () => {
     };
 
     // Create remote video element
-    const createRemoteVideoElement = (userId) => {
-        const videoElement = document.createElement("video");
-        videoElement.autoplay = true;
-        videoElement.muted = false;
-        videoElement.playsInline = true;
-        videoElement.id = `remoteVideo-${userId}`;
-        return videoElement;
-    };
+
 
     // Request media stream
    const requestForStream = async  () => {
@@ -288,32 +294,25 @@ const ChatRoom = () => {
     return (
         <div>
             <h1></h1>
-            <p>{count}</p>
+            <p>{Object.keys(remoteVideos).length}</p>
             {/* <div>
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
             </div> */}
 
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
                  {[<AudioCard title= "saiful" description="world" />, <AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />, <VideoCard title="saiful" /> ]}
+                 {Object.keys(remoteVideos).map((userId) => (
+
+                    <AudioCard title={userId.userName} />
+
+
+                ))}
            </div>
 
-            <div id="remoteVideosContainer">
-                {Object.keys(remoteVideosRef.current).map((userId) => (
-                    <div key={userId}>
-                        <video
-                            id={`remoteVideo-${userId}`}
-                            ref={(el) => {
-                                if (el && !remoteVideosRef.current[userId]) {
-                                    remoteVideosRef.current[userId] = el;
-                                }
-                            }}
-                            autoPlay
-                            playsInline
-                            style={{ width: "300px" }}
-                        />
-                    </div>
-                ))}
-            </div>
+
+           <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).length)}> Show users </button>
+
+            
         </div>
     );
 };

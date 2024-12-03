@@ -15,7 +15,9 @@ function setupSocket(server) {
         console.log('A user connected:', socket.id);
 
         // Join a room
-        socket.on('join-room', (roomId) => {
+        socket.on('join-room', ({roomId, userName}) => {
+            let payload = {userId: socket.id, userName}; 
+
             socket.join(roomId);
 
             // Add user to room
@@ -23,12 +25,12 @@ function setupSocket(server) {
                 rooms[roomId] = [];
                 socket.emit('first_in_room');
             }
-            rooms[roomId].push(socket.id);
+            rooms[roomId].push(payload);
 
             console.log(`User ${socket.id} joined room ${roomId}`);
 
             // Notify other users in the room
-            socket.to(roomId).emit('new-user', socket.id);
+            socket.to(roomId).emit('new-user', payload);
         });
 
         // Handle signaling messages (offer/answer/ICE candidates)
