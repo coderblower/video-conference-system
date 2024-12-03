@@ -41,7 +41,7 @@ const ChatRoom = () => {
 
     useEffect(() => {
         
-        socket.emit("join-room", {roomId, userName});
+        socket.emit("join-room", roomId);
 
 
         socket.on("first_in_room", async () =>{
@@ -53,10 +53,10 @@ const ChatRoom = () => {
  
         })
     
-        socket.on("new-user", async ({userId, userName}) => {
+        socket.on("new-user", async (userId) => {
             
             console.log(`New user joined: ${userId}`);
-            const peerConnection = await setupPeerConnection({userId, userName});
+            const peerConnection = await setupPeerConnection(userId);
     
           
             peerConnection.createOffer().then((offer) => {
@@ -65,8 +65,7 @@ const ChatRoom = () => {
                 socket.emit("message", {
                     roomId,
                     to: userId,
-                    offer: peerConnection.localDescription,
-                    userName
+                    offer: peerConnection.localDescription
                 });
             }).catch((error) => {
                 console.error("Error creating an offer:", error);
@@ -87,12 +86,12 @@ const ChatRoom = () => {
         });
     
         socket.on("message", async (data) => {
-          const { from, offer, answer, candidate, userName } = data;
+          const { from, offer, answer, candidate} = data;
       
           if (offer) {
               console.log("Received offer from", from);
               
-              const peerConnection = await setupPeerConnection({userId: from, userName});
+              const peerConnection = await setupPeerConnection(from);
               
               // Set the remote description first when receiving an offer
               await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -130,7 +129,7 @@ const ChatRoom = () => {
     
 
     // Setup Peer Connection
-    const setupPeerConnection = async ({userId, userName}) => {
+    const setupPeerConnection = async (userId) => {
         const peerConnection = new RTCPeerConnection(servers);
 
         try {
@@ -156,7 +155,7 @@ const ChatRoom = () => {
                 if(!remoteVideos[userId]){
                     setRemoteVideos((prevVideos) => ({
                         ...prevVideos,
-                        [userId]: {stream:  event.streams[0], userName},
+                        [userId]: event.streams[0],
                     }));
                 }
                
@@ -303,7 +302,7 @@ const ChatRoom = () => {
                  {[<AudioCard title= "saiful" description="world" />, <AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />, <VideoCard title="saiful" /> ]}
                  {Object.keys(remoteVideos).map((userId) => (
 
-                    <AudioCard title={userId.userName} />
+                    <AudioCard title={userId} />
 
 
                 ))}
