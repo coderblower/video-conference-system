@@ -17,9 +17,9 @@ const ChatRoom = () => {
     const localVideoRef = useRef(null);
     const [remoteVideos, setRemoteVideos] = useState({});
     const [localStream, setLocalStream] = useState(null);
+    const [peerConnections, setPeerConnections ] = useState({})
     
     const [isScreenSharing, setIsScreenSharing] = useState(false);
-    const peerConnectionsRef = useRef({});
     const [userName, setUserName] = useState(window.localStorage.getItem('name') || null);
     
     
@@ -74,15 +74,18 @@ const ChatRoom = () => {
     
         socket.on("user-left", (userId) => {
             console.log(`User left: ${userId}`);
-            if (peerConnectionsRef.current[userId]) {
-                peerConnectionsRef.current[userId].close();
-                delete peerConnectionsRef.current[userId];
-            }
+            
             setRemoteVideos((prevVideos) => {
                 const newVideos = { ...prevVideos };
                 delete newVideos[userId];
                 return newVideos;
             });
+
+            setRemoteVideos((prevPeer)=>{
+                const prevPeers = {...prevPeer};
+                delete prevPeers[userId]; 
+                return prevPeers;
+            })
         });
     
         socket.on("message", async (data) => {
@@ -105,14 +108,14 @@ const ChatRoom = () => {
               console.log("Received answer from", from);
               
               // Set the remote description only if it hasn't been set already
-              if (peerConnectionsRef.current[from] && peerConnectionsRef.current[from].signalingState !== 'stable') {
-                  await peerConnectionsRef.current[from].setRemoteDescription(new RTCSessionDescription(answer));
+              if (peerConnections[from] && peerConnections[from].signalingState !== 'stable') {
+                  await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
               }
           } else if (candidate) {
               console.log("Received ICE candidate from", from);
               
-              if (peerConnectionsRef.current[from]) {
-                  await peerConnectionsRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
+              if (peerConnections[from]) {
+                  await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
               }
           }
       });
@@ -150,15 +153,17 @@ const ChatRoom = () => {
             // Handle remote track
             peerConnection.ontrack = (event) => {
                 console.log(`Received track from user: ${userId}`);
-
-
                 if(!remoteVideos[userId]){
+
                     setRemoteVideos((prevVideos) => ({
                         ...prevVideos,
-                        [userId]: event.streams[0],
+                        [userId]: {
+                            userId: userId,
+                            stream: event.streams[0] // Assign a proper key, e.g., "stream"
+                        }
                     }));
-                }
-               
+                
+               }
             
                 
             };
@@ -175,9 +180,10 @@ const ChatRoom = () => {
                 }
             };
 
-    
-                
-        
+
+           setPeerConnections((prev)=>({
+                ...prev, [userId]: peerConnection
+           }));
 
             return peerConnection;
         } catch (error) {
@@ -242,7 +248,7 @@ const ChatRoom = () => {
             const screenTrack = screenStream.getVideoTracks()[0];
 
             // Replace video track in peer connections
-            Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+            Object.values(peerConnections).forEach((peerConnection) => {
                 const sender = peerConnection.getSenders().find((s) => s.track.kind === "video");
                 if (sender) {
                     sender.replaceTrack(screenTrack);
@@ -260,7 +266,7 @@ const ChatRoom = () => {
                 setIsScreenSharing(false);
                 if (localStream) {
                     const videoTrack = localStream.getVideoTracks()[0];
-                    Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+                    Object.values(peerConnections).forEach((peerConnection) => {
                         const sender = peerConnection.getSenders().find((s) => s.track.kind === "video");
                         if (sender) {
                             sender.replaceTrack(videoTrack);
@@ -294,6 +300,7 @@ const ChatRoom = () => {
         <div>
             <h1></h1>
             <p>{Object.keys(remoteVideos).length}</p>
+            <p>{Object.keys(peerConnections).length}</p>
             {/* <div>
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
             </div> */}
