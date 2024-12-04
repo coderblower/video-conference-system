@@ -337,9 +337,9 @@ const ChatRoom = () => {
                     const hasVideoTrack = localStream?.getVideoTracks()?.length > 0;
                     
                     return hasVideoTrack ? (
-                    <VideoCard key={userName} stream={localStream} title={`Video - ${userName}`} />
+                    <VideoCard key={userName} stream={localStream} muted = {true} title={`Video - ${userName}`} />
                     ) : (
-                    <AudioCard key={userName} stream={localStream} title={`Audio - ${userName}`} description="No video available" />
+                    <AudioCard key={userName} stream={localStream} muted = {true} title={`Audio - ${userName}`} description="No video available" />
                     );
                 })()}
                  

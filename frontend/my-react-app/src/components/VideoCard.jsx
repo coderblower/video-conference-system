@@ -1,7 +1,7 @@
 import React from 'react';
 import videoPoster from '../../public/images/video_poster.jpg'
 
-function VideoCard({ title, stream, videoSrc }) {
+function VideoCard({ title, stream, videoSrc, muted }) {
     return (
         <div className="rounded bg-[#8f8f8f63] overflow-hidden shadow-lg bg-white relative flex flex-col h-full">
         {/* Video section */}
@@ -10,6 +10,7 @@ function VideoCard({ title, stream, videoSrc }) {
                 className="w-full h-full object-cover"
                 autoPlay
                 playsInline
+                muted ={muted}
                 controls // Optional: Adds playback controls (e.g., play, pause, volume)
                 ref={(videoElement) => {
                     if (videoElement && stream) {
