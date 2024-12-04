@@ -6,7 +6,7 @@ const Main = () => {
         <div className="min-h-screen flex flex-col">
             {/* Header */}
             <header className=" bg-gray-800 text-white p-4">
-                <h1 className="text-2xl font-bold"> Google Meet 2.0</h1>
+                <h1 className="text-2xl font-bold"> Versatil▢ Meet</h1>
             </header>
 
             {/* Main content section */}
@@ -16,7 +16,7 @@ const Main = () => {
 
             {/* Footer */}
             <footer className="bg-gray-800 text-white p-4 text-center">
-                <p>&copy; {new Date().getFullYear()} My Application</p>
+                <p>&copy; {new Date().getFullYear()} Versatilo Group</p>
             </footer>
         </div>
     );

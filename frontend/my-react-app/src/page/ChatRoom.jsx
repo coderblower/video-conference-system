@@ -7,7 +7,7 @@ import VideoCard from "../components/VideoCard";
 
 
 // Socket connection
-const socket = io("http://localhost:3000/", {
+const socket = io("https://meeting.mges.global/", {
     transports: ["websocket", 'polling'],
 });
 
@@ -24,6 +24,7 @@ const ChatRoom = () => {
     const peerConnectionsRef = useRef({});
     const [userName, setUserName] = useState(window.localStorage.getItem('name') || null);
     const [count, setCount] = useState('')
+    
     
 
     // ICE servers configuration
@@ -44,7 +45,6 @@ const ChatRoom = () => {
     useEffect(() => {
         
         socket.emit("join-room", roomId);
-
 
   
     
@@ -151,7 +151,7 @@ const ChatRoom = () => {
                 remoteVideosRef.current[userId] = event.streams[0]    
                 
                
-            
+                setRemoteVideos((prev) => ({ ...prev, [userId]: event.streams[0]  }));
                 
             };
 
@@ -331,17 +331,35 @@ const ChatRoom = () => {
             </div> */}
 
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                 {[<AudioCard title= "saiful" description="world" />, <AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />,<AudioCard title= "saiful" description="world" />, <VideoCard title="saiful" /> ]}
-                 {Object.keys(remoteVideos).map((userId) => (
+                
+                {localStream && (()=>{
+                    
+                    const hasVideoTrack = localStream?.getVideoTracks()?.length > 0;
+                    
+                    return hasVideoTrack ? (
+                    <VideoCard key={userName} stream={localStream} title={`Video - ${userName}`} />
+                    ) : (
+                    <AudioCard key={userName} stream={localStream} title={`Audio - ${userName}`} description="No video available" />
+                    );
+                })()}
+                 
+                 
+                 {Object.keys(remoteVideos).map((userId) => {
+                    
+                    
+                    const stream = remoteVideos[userId];
+                    const hasVideoTrack = stream?.getVideoTracks()?.length > 0;
 
-                    <AudioCard title={userId.userName} />
-
-
-                ))}
+                    return hasVideoTrack ? (
+                    <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
+                    ) : (
+                    <AudioCard key={userId} stream={stream} title={`Audio - ${userId}`} description="No video available" />
+                    );
+                                } )}
            </div>
 
 
-           <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).length)}> Show users </button>
+           <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).join` new :   -> `)}> Show users </button>
 
             
         </div>
