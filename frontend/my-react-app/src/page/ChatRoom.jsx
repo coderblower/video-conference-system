@@ -7,8 +7,8 @@ import VideoCard from "../components/VideoCard";
 
 
 // Socket connection
-const socket = io("https://meeting.mges.global", {
-    transports: ["websocket"],
+const socket = io("http://localhost:3000/", {
+    transports: ["websocket", 'polling'],
 });
 
 const roomId = "test-room"; // Room ID for the call
@@ -17,11 +17,13 @@ const ChatRoom = () => {
     const localVideoRef = useRef(null);
     const [remoteVideos, setRemoteVideos] = useState({});
     const [localStream, setLocalStream] = useState(null);
-    
+   
+    const remoteVideosRef  = useRef({});
+
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const peerConnectionsRef = useRef({});
     const [userName, setUserName] = useState(window.localStorage.getItem('name') || null);
-    
+    const [count, setCount] = useState('')
     
 
     // ICE servers configuration
@@ -41,22 +43,15 @@ const ChatRoom = () => {
 
     useEffect(() => {
         
-        socket.emit("join-room", {roomId, userName});
+        socket.emit("join-room", roomId);
 
 
-        socket.on("first_in_room", async () =>{
-            const stream = await requestForStream();
-            setLocalStream(stream);
-            
-            console.log("First in room");
-
- 
-        })
+  
     
-        socket.on("new-user", async ({userId, userName}) => {
+        socket.on("new-user", async (userId) => {
             
             console.log(`New user joined: ${userId}`);
-            const peerConnection = await setupPeerConnection({userId, userName});
+            const peerConnection = await setupPeerConnection(userId);
     
           
             peerConnection.createOffer().then((offer) => {
@@ -65,8 +60,7 @@ const ChatRoom = () => {
                 socket.emit("message", {
                     roomId,
                     to: userId,
-                    offer: peerConnection.localDescription,
-                    userName
+                    offer: peerConnection.localDescription
                 });
             }).catch((error) => {
                 console.error("Error creating an offer:", error);
@@ -88,12 +82,12 @@ const ChatRoom = () => {
         });
     
         socket.on("message", async (data) => {
-          const { from, offer, answer, candidate, userName } = data;
+          const { from, offer, answer, candidate } = data;
       
           if (offer) {
               console.log("Received offer from", from);
               
-              const peerConnection = await setupPeerConnection({userId: from, userName});
+              const peerConnection = await setupPeerConnection(from );
               
               // Set the remote description first when receiving an offer
               await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -131,35 +125,31 @@ const ChatRoom = () => {
     
 
     // Setup Peer Connection
-    const setupPeerConnection = async ({userId, userName}) => {
-        const peerConnection = new RTCPeerConnection(servers);
+    const setupPeerConnection = async (userId) => {
+        let peerConnection = new RTCPeerConnection(servers);
+
 
         try {
-            if (localStream) {
-                localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
-                console.log("Existing local stream tracks added to peer connection.");
-            } else {
-                const stream = await requestForStream();
-                setLocalStream(stream);
-                stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
-                if (localVideoRef.current) {
-                    localVideoRef.current.srcObject = stream;
-                    localVideoRef.current.muted = true;
-                }
-                console.log("New stream tracks added to peer connection.");
-            }
+    
+        
+            peerConnection =  await addLocalStream(peerConnection);
+              
+      
+          } catch (error) {
+              console.error('Error in handling stream:', error);
+          }
+         
+
+        
+            
 
             // Handle remote track
             peerConnection.ontrack = (event) => {
                 console.log(`Received track from user: ${userId}`);
 
 
-                if(!remoteVideos[userId]){
-                    setRemoteVideos((prevVideos) => ({
-                        ...prevVideos,
-                        [userId]: {stream:  event.streams[0], userName},
-                    }));
-                }
+                remoteVideosRef.current[userId] = event.streams[0]    
+                
                
             
                 
@@ -180,11 +170,9 @@ const ChatRoom = () => {
     
                 
         
-
+            peerConnectionsRef.current[userId] = peerConnection;
             return peerConnection;
-        } catch (error) {
-            console.error("Error in setting up peer connection:", error);
-        }
+       
     };
 
     // Create remote video element
@@ -292,10 +280,52 @@ const ChatRoom = () => {
         }
     };
 
+    async function addLocalStream(peerConnection){
+        // Check if `localStream` already exists
+        if (localStream) {
+         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+         console.log('Existing local stream tracks added to peer connection.');
+ 
+         return peerConnection;
+     }
+ 
+     // Check if the stream is marked as 'no stream'
+     // if (localStream === 'no stream') {
+     //     displayAvatar();
+     //     console.log('Displaying avatar as no stream is available.');
+     //     return;
+     // }
+ 
+     // Request a new stream
+     const stream = await requestForStream();
+ 
+     if (!stream) {
+         console.log('No stream available. Displaying avatar instead.');
+         
+         return;
+     }
+ 
+     // Assign the stream to the local video element if it exists
+    //  if (localVideo) {
+    //      localVideo.srcObject = stream;
+    //      localVideo.muted = false; // Prevent audio feedback
+    //      console.log('Local stream loaded into video element.');
+    //  }
+ 
+     // Add the stream tracks to the peer connection
+     stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+     console.log('New stream tracks added to peer connection.');
+ 
+     // Store the stream globally
+     setLocalStream(stream);
+ 
+     return peerConnection;
+ }
+
     return (
         <div>
             <h1></h1>
-            <p>{Object.keys(remoteVideos).length}</p>
+            <p>{count}</p>
             {/* <div>
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
             </div> */}

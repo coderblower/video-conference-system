@@ -1,6 +1,6 @@
 
 
-const socket = io('wss://meeting.mges.global', {
+const socket = io('http://localhost:3000/', {
     transports: ['websocket', 'polling']
 });
 const roomId = 'test-room'; // Room ID for the call
