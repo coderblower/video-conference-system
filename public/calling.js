@@ -94,7 +94,7 @@ socket.on('message', async (data) => {
         socket.emit('message', { roomId, to: from, answer });
     } else if (answer) {
         console.log('Received answer from', from, peerConnections[from]);
-        if (peerConnections[from]) {
+        if (peerConnections[from] && peerConnections[from].signalingState !== 'stable') {
             await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
         }
     } else if (candidate) {
@@ -158,6 +158,7 @@ async function setupPeerConnection(userId) {
             remoteVideos[userId] = createRemoteVideoElement(userId);
         }
         remoteVideos[userId][0].srcObject = event.streams[0];
+        console.log(remoteVideos)
     };
 
     // Handle ICE candidate

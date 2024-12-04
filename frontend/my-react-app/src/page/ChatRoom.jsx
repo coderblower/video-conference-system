@@ -7,7 +7,7 @@ import VideoCard from "../components/VideoCard";
 
 
 // Socket connection
-const socket = io("https://meeting.mges.global", {
+const socket = io("http://localhost:3000/", {
     transports: ["websocket"],
 });
 
@@ -44,14 +44,11 @@ const ChatRoom = () => {
         socket.emit("join-room", roomId);
 
 
-        socket.on("first_in_room", async () =>{
-            const stream = await requestForStream();
-            setLocalStream(stream);
-            
-            console.log("First in room");
+        // socket.on("first_in_room", async () =>{
+           
 
  
-        })
+        // })
     
         socket.on("new-user", async (userId) => {
             
@@ -81,7 +78,7 @@ const ChatRoom = () => {
                 return newVideos;
             });
 
-            setRemoteVideos((prevPeer)=>{
+            setPeerConnections((prevPeer)=>{
                 const prevPeers = {...prevPeer};
                 delete prevPeers[userId]; 
                 return prevPeers;
@@ -122,11 +119,7 @@ const ChatRoom = () => {
       
     
         // Clean up socket on component unmount
-        return () => {
-            socket.off("new-user");
-            socket.off("user-left");
-            socket.off("message");
-        };
+       
     }, []);  // No dependencies to trigger it unnecessarily
     
     
