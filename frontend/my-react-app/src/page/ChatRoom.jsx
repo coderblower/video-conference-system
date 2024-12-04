@@ -73,6 +73,7 @@ const ChatRoom = () => {
             });
         });
     
+        
         socket.on("user-left", (userId) => {
             console.log(`User left: ${userId}`);
             if (peerConnectionsRef.current[userId]) {
