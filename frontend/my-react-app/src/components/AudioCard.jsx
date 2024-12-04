@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import avatar from '../../public/images/avatar.svg'
 
 
-function AudioCard({ title, stream, description }) {
+function AudioCard({ title, stream, description, muted }) {
  
     
 
@@ -14,6 +14,7 @@ function AudioCard({ title, stream, description }) {
                          <audio
                             className="hidden"
                             autoPlay
+                            muted = {muted}
                             ref={(audioElement) => {
                             if (audioElement && stream) {
                                 audioElement.srcObject = stream;
