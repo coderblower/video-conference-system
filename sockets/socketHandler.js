@@ -33,6 +33,11 @@ function setupSocket(server) {
             socket.to(roomId).emit('new-user', socket.id);
         });
 
+        socket.on("chat-message", (roomId, newMessage) => {
+            console.log(`Message from ${newMessage.userId} in room ${roomId}: ${newMessage.message}`);
+            io.to(roomId).emit("chat-message", newMessage); // Broadcast message to all users in the room
+          });
+
         // Handle signaling messages (offer/answer/ICE candidates)
         socket.on('message', (data) => {
             const { roomId, to } = data;

@@ -6,6 +6,7 @@ import VideoCard from "../components/VideoCard";
 import { useLocalStream } from '../context/localStreamContext.jsx';
 import { useSetupPeerConnection } from '../services/peerConnection.jsx';
 import { usePeerConnections } from "../context/PeerConnectionsContext.jsx";
+import Chat from "../components/Chat.jsx"
 
 
 // Socket connection
@@ -220,6 +221,7 @@ const ChatRoom = () => {
                                 } )}
            </div>
 
+                 <Chat roomId={roomId} socket={socket} userId={userName}  />               
 
            <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).join` new :   -> `)}> Show users </button>
 
