@@ -11,8 +11,16 @@ function Chat({ roomId, userId, socket }) {
     // Notify the server that the user joined a specific room
     
 
+    socket.on("load-old_mesage", (message)=>{
+      console.log(message)
+      message.forEach(x=>{
+        setMessages((prevMessages) => [...prevMessages, x]);
+      })
+    })
+
     // Listen for incoming chat messages from other users in the room
     socket.on("chat-message", (message) => {
+      console.log('from server ');
       setMessages((prevMessages) => [...prevMessages, message]);
     });
 
@@ -30,7 +38,7 @@ function Chat({ roomId, userId, socket }) {
       socket.emit("chat-message", roomId, newMessage);
 
       // Add the message to the local state (for UI rendering)
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
+      
 
       // Clear the input field after sending
       setMessage("");

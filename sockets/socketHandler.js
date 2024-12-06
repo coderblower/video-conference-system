@@ -10,15 +10,20 @@ function setupSocket(server) {
 
     // Store users in rooms
     const rooms = {};
+    const messages={}
 
     io.on('connection', (socket) => {
         console.log('A user connected:', socket.id);
-
+        
+        
+        
         // Join a room
         socket.on('join-room', (roomId) => {
-          
-
+            
+            
             socket.join(roomId);
+            
+            socket.emit('load-old_mesage', messages[roomId]);
 
             // Add user to room
             if (!rooms[roomId]) {
@@ -31,10 +36,16 @@ function setupSocket(server) {
 
             // Notify other users in the room
             socket.to(roomId).emit('new-user', socket.id);
+
+            
         });
 
         socket.on("chat-message", (roomId, newMessage) => {
-            console.log(`Message from ${newMessage.userId} in room ${roomId}: ${newMessage.message}`);
+            if(!messages[roomId]){
+                messages[roomId] = [];
+            }
+            messages[roomId].push(newMessage);
+            console.log(messages);
             io.to(roomId).emit("chat-message", newMessage); // Broadcast message to all users in the room
           });
 

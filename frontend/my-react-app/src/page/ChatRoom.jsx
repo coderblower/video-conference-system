@@ -10,7 +10,7 @@ import Chat from "../components/Chat.jsx"
 
 
 // Socket connection
-const socket = io("https://meeting.mges.global/", {
+const socket = io("http://localhost:3000/", {
     transports: ["websocket", 'polling'],
 });
 
