@@ -26,11 +26,32 @@ export const useSetupPeerConnection = () => {
 
         // Handle remote track
         peerConnection.ontrack = (event) => {
-            console.log(`Received track from user: ${userId}`);
-            remoteVideosRef.current[userId] = event.streams[0];
-            setRemoteVideos((prev) => ({ ...prev, [userId]: event.streams[0] }));
+            console.log(`Received ${event.track.kind} track from user: ${userId}`);
+        
+            // Check if the `userId` already exists in `remoteVideosRef`
+            if (!remoteVideosRef.current[userId]) {
+                remoteVideosRef.current[userId] = {
+                    video: null,
+                    audio: null,
+                };
+            }
+        
+            // Handle the track based on its type
+            if (event.track.kind === 'video') {
+                remoteVideosRef.current[userId].video = event.streams[0];
+            } else if (event.track.kind === 'audio') {
+                remoteVideosRef.current[userId].audio = event.streams[0];
+            }
+        
+            // Update the state to trigger re-rendering
+            setRemoteVideos((prev) => ({
+                ...prev,
+                [userId]: {
+                    video: remoteVideosRef.current[userId].video,
+                    audio: remoteVideosRef.current[userId].audio,
+                },
+            }));
         };
-
         // Handle ICE candidate
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {

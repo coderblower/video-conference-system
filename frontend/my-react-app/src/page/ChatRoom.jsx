@@ -206,18 +206,21 @@ const ChatRoom = () => {
                 })()}
                  
                  
-                 {Object.keys(remoteVideos).map((userId) => {
-                    
-                    
-                    const stream = remoteVideos[userId];
-                    const hasVideoTrack = stream?.getVideoTracks()?.length > 0;
+                {Object.keys(remoteVideos).map((userId) => {
+                    const { video, audio } = remoteVideos[userId];
+                    const hasVideoTrack = video !== null;
+                    const hasAudioTrack = audio !== null;
 
-                    return hasVideoTrack ? (
-                    <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
-                    ) : (
-                        <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
+                    return (
+                        <>
+                            {hasVideoTrack ? (
+                                <VideoCard key={userId} stream={video} title={`Video - ${userId}`} />
+                            ) : (
+                                <AudioCard key={userId} stream={audio} title={`Audio - ${userId}`} description="No video available" />
+                            )}
+                        </>
                     );
-                                } )}
+                })}
            </div>
 
 
