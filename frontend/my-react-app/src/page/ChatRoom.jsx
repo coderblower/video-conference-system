@@ -215,7 +215,7 @@ const ChatRoom = () => {
                     return hasVideoTrack ? (
                     <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
                     ) : (
-                    <AudioCard key={userId} stream={stream} title={`Audio - ${userId}`} description="No video available" />
+                        <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
                     );
                                 } )}
            </div>
