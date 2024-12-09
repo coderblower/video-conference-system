@@ -11,7 +11,7 @@ function VideoCard({ title, stream, videoSrc, muted }) {
                 autoPlay
                 playsInline
                 muted ={muted}
-                controls // Optional: Adds playback controls (e.g., play, pause, volume)
+                
                 ref={(videoElement) => {
                     if (videoElement && stream) {
                         videoElement.srcObject = stream; // Attach RTC stream

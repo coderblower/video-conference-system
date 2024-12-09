@@ -18,6 +18,7 @@ export const useSetupPeerConnection = () => {
 
         let peerConnection = new RTCPeerConnection(servers);
 
+        
         try {
             peerConnection = await addLocalStream({peerConnection, localStream, setLocalStream });
         } catch (error) {
@@ -26,7 +27,7 @@ export const useSetupPeerConnection = () => {
 
         // Handle remote track
         peerConnection.ontrack = (event) => {
-            console.log(`Received track from user: ${userId}`);
+            console.log(`Received ${event.track.kind} track from user: ${userId}`);
             remoteVideosRef.current[userId] = event.streams[0];
             setRemoteVideos((prev) => ({ ...prev, [userId]: event.streams[0] }));
         };
