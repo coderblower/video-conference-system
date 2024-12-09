@@ -54,7 +54,10 @@ const ChatRoom = () => {
 
     
           
-            peerConnection.createOffer().then((offer) => {
+            peerConnection.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            }).then((offer) => {
                 return peerConnection.setLocalDescription(offer);
             }).then(() => {
                 socket.emit("message", {
