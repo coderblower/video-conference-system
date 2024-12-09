@@ -18,6 +18,7 @@ export const useSetupPeerConnection = () => {
 
         let peerConnection = new RTCPeerConnection(servers);
 
+        
         try {
             peerConnection = await addLocalStream({peerConnection, localStream, setLocalStream });
         } catch (error) {
