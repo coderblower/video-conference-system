@@ -215,9 +215,9 @@ const ChatRoom = () => {
     const hasVideoTrack = userStreams && userStreams.video; // Check for video explicitly
 
     return hasVideoTrack ? (
-        <VideoCard key={userId} stream={userStreams} title={`Video - ${userId}`} />
+        <VideoCard key={userId} stream={userStreams.video} title={`Video - ${userId}`} />
     ) : (
-        <AudioCard key={userId} stream={userStreams} title={`Audio - ${userId}`} description="No video available" />
+        <AudioCard key={userId} stream={userStreams.audio} title={`Audio - ${userId}`} description="No video available" />
     );
 })}
 
