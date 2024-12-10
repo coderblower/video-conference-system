@@ -207,18 +207,17 @@ const ChatRoom = () => {
                 })()}
                  
                  
-                 {Object.keys(remoteVideos).map((userId) => {
-                    
-                    
-                    const stream = remoteVideos[userId];
-                    const hasVideoTrack = stream?.getVideoTracks()?.length > 0;
+                {Object.keys(remoteVideosRef.current).map((userId) => {
+    const userStreams = remoteVideosRef.current[userId];
+    const hasVideoTrack = userStreams && userStreams.video; // Check for video explicitly
 
-                    return hasVideoTrack ? (
-                    <VideoCard key={userId} stream={stream} title={`Video - ${userId}`} />
-                    ) : (
-                    <AudioCard key={userId} stream={stream} title={`Audio - ${userId}`} description="No video available" />
-                    );
-                                } )}
+    return hasVideoTrack ? (
+        <VideoCard key={userId} stream={userStreams} title={`Video - ${userId}`} />
+    ) : (
+        <AudioCard key={userId} stream={userStreams} title={`Audio - ${userId}`} description="No video available" />
+    );
+})}
+
            </div>
 
                  <Chat roomId={roomId} socket={socket} userId={userName}  />               

@@ -28,10 +28,26 @@ export const useSetupPeerConnection = () => {
         // Handle remote track
         peerConnection.ontrack = (event) => {
             console.log(`Received ${event.track.kind} track from user: ${userId}`);
-            remoteVideosRef.current[userId] = event.streams[0];
-            setRemoteVideos((prev) => ({ ...prev, [userId]: event.streams[0] }));
+        
+            if (!remoteVideosRef.current[userId]) {
+                // Initialize the user object with audio and video tracks set to null
+                remoteVideosRef.current[userId] = {
+                    audio: null,
+                    video: null
+                };
+            }
+        
+            if (event.track.kind === 'audio') {
+                // Assign the audio stream
+                remoteVideosRef.current[userId].audio = event.streams[0];
+            } else if (event.track.kind === 'video') {
+                // Assign the video stream
+                remoteVideosRef.current[userId].video = event.streams[0];
+            }
+        
+            setRemoteVideos((prev) => ({ ...prev, [userId]: remoteVideosRef.current[userId] }));
         };
-
+        
         // Handle ICE candidate
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
