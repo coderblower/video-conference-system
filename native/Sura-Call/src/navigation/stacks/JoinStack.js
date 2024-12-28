@@ -1,16 +1,16 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import HomeScreen from '../../screens/HomeScreen';
+import ChatRoom from '../../screens/ChatRoom';
 
 const Stack = createNativeStackNavigator();
 
-export default function HomeStack() {
+export default function JoinStack() {
   return (
     <Stack.Navigator>
       <Stack.Screen 
-        name="HomeScreen" 
-        component={HomeScreen} 
-        options={{ headerTitle: 'Home' }} 
+        name="ChatRoom" 
+        component={ChatRoom} 
+        options={{ headerTitle: 'Chat ' }} 
       />
     </Stack.Navigator>
   );
