@@ -36,7 +36,6 @@ const ChatRoom = () => {
     const [count, setCount] = useState('')
     
     
-    
 
 
     useEffect(() => {
@@ -45,15 +44,15 @@ const ChatRoom = () => {
                 socket.emit("join-room", roomId);
     
                 // Await the stream from streamService
-                if(!localStream){
-                    const stream = await streamService();
-                if (stream) {
-                    setLocalStream(stream);
-                } else {
-                    console.log("No stream available. Falling back to avatar or other alternatives.");
-                }
+                // if(!localStream){
+                //     const stream = await streamService();
+                // if (stream) {
+                //     setLocalStream(stream);
+                // } else {
+                //     console.log("No stream available. Falling back to avatar or other alternatives.");
+                // }
+                // }
     
-                }
                 // Socket event for when a new user joins
                 socket.on("new-user", async (userId) => {
                     console.log(`New user joined: ${userId}`);
