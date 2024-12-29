@@ -213,7 +213,7 @@ const ChatRoom = () => {
                 <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "300px" }} />
             </div> */}
 
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 p-4">
                 
                 { localStream  && (()=>{
                     
@@ -240,9 +240,7 @@ const ChatRoom = () => {
 
            </div>
 
-                 <Chat roomId={roomId} socket={socket} userId={userName}  />               
-
-                <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).join` new :   -> `)}> Show users </button>
+              
 
             
         </div>
