@@ -15,7 +15,7 @@ export async function addLocalStream({peerConnection, localStream, setLocalStrea
  }
 
 
- let stream = streamService();
+ let stream = await streamService();
 
 
  // Add the stream tracks to the peer connection

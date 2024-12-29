@@ -9,6 +9,9 @@ import { usePeerConnections } from "../context/PeerConnectionsContext.jsx";
 import Chat from "../components/Chat.jsx"
 
 
+import { streamService } from "../utils/helper";
+
+
 // Socket connection
 const socket = io('wss://meeting.mges.global', {
     transports: ["websocket", 'polling'],
@@ -36,103 +39,110 @@ const ChatRoom = () => {
 
 
     useEffect(() => {
-        
-        socket.emit("join-room", roomId);
-
-
-        /// add new On event for First  user to join the room. show local video on page 
-
-// socket.on ("fist-user", async (userId)=>{
-//     console.log("first user joined");
-//    const peerConnection = await setupPeerConnection({
-//     userId,
-//     socket,
-//     roomId,
-//     setRemoteVideos
-// });
-
-// })  
+        const initialize = async () => {
+            try {
+                socket.emit("join-room", roomId);
     
-        socket.on("new-user", async (userId) => {
-            
-           
-            console.log(`New user joined: ${userId}`);
-            const peerConnection = await setupPeerConnection({
-                userId,
-                socket,
-                roomId,
-                setRemoteVideos
-            });
-
+                // Await the stream from streamService
+                const stream = await streamService();
+                if (stream) {
+                    setLocalStream(stream);
+                } else {
+                    console.log("No stream available. Falling back to avatar or other alternatives.");
+                }
     
-          
-            peerConnection.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true
-            }).then((offer) => {
-                return peerConnection.setLocalDescription(offer);
-            }).then(() => {
-                socket.emit("message", {
-                    roomId,
-                    to: userId,
-                    offer: peerConnection.localDescription
+                // Socket event for when a new user joins
+                socket.on("new-user", async (userId) => {
+                    console.log(`New user joined: ${userId}`);
+                    const peerConnection = await setupPeerConnection({
+                        userId,
+                        socket,
+                        roomId,
+                        setRemoteVideos,
+                    });
+    
+                    peerConnection
+                        .createOffer({
+                            offerToReceiveAudio: true,
+                            offerToReceiveVideo: true,
+                        })
+                        .then((offer) => peerConnection.setLocalDescription(offer))
+                        .then(() => {
+                            socket.emit("message", {
+                                roomId,
+                                to: userId,
+                                offer: peerConnection.localDescription,
+                            });
+                        })
+                        .catch((error) => {
+                            console.error("Error creating an offer:", error);
+                        });
                 });
-            }).catch((error) => {
-                console.error("Error creating an offer:", error);
-            });
-        });
     
-        
-        socket.on("user-left", (userId) => {
-            console.log(`User left: ${userId}`);
-            if (peerConnectionsRef.current[userId]) {
-                peerConnectionsRef.current[userId].close();
-                delete peerConnectionsRef.current[userId];
+                // Socket event for when a user leaves
+                socket.on("user-left", (userId) => {
+                    console.log(`User left: ${userId}`);
+                    if (peerConnectionsRef.current[userId]) {
+                        peerConnectionsRef.current[userId].close();
+                        delete peerConnectionsRef.current[userId];
+                    }
+                    setRemoteVideos((prevVideos) => {
+                        const newVideos = { ...prevVideos };
+                        delete newVideos[userId];
+                        return newVideos;
+                    });
+                });
+    
+                // Socket event for handling messages (offers, answers, and ICE candidates)
+                socket.on("message", async (data) => {
+                    const { from, offer, answer, candidate } = data;
+    
+                    if (offer) {
+                        console.log("Received offer from", from);
+    
+                        const peerConnection = await setupPeerConnection({
+                            userId: from,
+                            socket,
+                            roomId,
+                            setRemoteVideos,
+                        });
+    
+                        // Set the remote description when receiving an offer
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    
+                        // Create an answer and set it as the local description
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+    
+                        socket.emit("message", { roomId, to: from, answer });
+                    } else if (answer) {
+                        console.log("Received answer from", from);
+    
+                        // Set the remote description if not already stable
+                        if (
+                            peerConnectionsRef.current[from] &&
+                            peerConnectionsRef.current[from].signalingState !== "stable"
+                        ) {
+                            await peerConnectionsRef.current[from].setRemoteDescription(
+                                new RTCSessionDescription(answer)
+                            );
+                        }
+                    } else if (candidate) {
+                        console.log("Received ICE candidate from", from);
+    
+                        if (peerConnectionsRef.current[from]) {
+                            await peerConnectionsRef.current[from].addIceCandidate(
+                                new RTCIceCandidate(candidate)
+                            );
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error in useEffect:", error);
             }
-            setRemoteVideos((prevVideos) => {
-                const newVideos = { ...prevVideos };
-                delete newVideos[userId];
-                return newVideos;
-            });
-        });
+        };
     
-        socket.on("message", async (data) => {
-          const { from, offer, answer, candidate } = data;
-      
-          if (offer) {
-              console.log("Received offer from", from);
-              
-              const peerConnection = await setupPeerConnection( {
-                userId:from,
-                socket,
-                roomId,
-                setRemoteVideos
-            } );
-              
-              // Set the remote description first when receiving an offer
-              await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-              
-              // Create an answer and set it as the local description
-              const answer = await peerConnection.createAnswer();
-              await peerConnection.setLocalDescription(answer);
-              
-              socket.emit("message", { roomId, to: from, answer });
-          } else if (answer) {
-              console.log("Received answer from", from);
-              
-              // Set the remote description only if it hasn't been set already
-              if (peerConnectionsRef.current[from] && peerConnectionsRef.current[from].signalingState !== 'stable') {
-                  await peerConnectionsRef.current[from].setRemoteDescription(new RTCSessionDescription(answer));
-              }
-          } else if (candidate) {
-              console.log("Received ICE candidate from", from);
-              
-              if (peerConnectionsRef.current[from]) {
-                  await peerConnectionsRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
-              }
-          }
-      });
-      
+        initialize();
     
         // Clean up socket on component unmount
         return () => {
@@ -140,8 +150,8 @@ const ChatRoom = () => {
             socket.off("user-left");
             socket.off("message");
         };
-    }, []);  // No dependencies to trigger it unnecessarily
- 
+    }, []); // No dependencies to trigger it unnecessarily
+    
 
 
     // Screen sharing functionality
