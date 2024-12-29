@@ -33,7 +33,7 @@ export const streamService = async ()=>{
     // Request a new stream
     let stream = await requestForStream();
 
-    stream = await modifyStreamVolume(stream, 3.0);
+    // stream = await modifyStreamVolume(stream, 3.0);
 
     if (!stream) {
     console.log('No stream available. Displaying avatar instead.');
