@@ -12,6 +12,8 @@ import { RTCView } from "react-native-webrtc";
 // Socket connection
 const socket = io("wss://meeting.mges.global", {
   transports: ["websocket", "polling"],
+const socket = io("wss://meeting.mges.global", {
+  transports: ["websocket", "polling"],
 });
 
 const roomId = "test-room"; // Room ID for the call

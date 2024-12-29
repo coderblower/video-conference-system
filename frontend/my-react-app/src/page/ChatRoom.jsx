@@ -39,7 +39,19 @@ const ChatRoom = () => {
         
         socket.emit("join-room", roomId);
 
-  
+
+        /// add new On event for First  user to join the room. show local video on page 
+
+// socket.on ("fist-user", async (userId)=>{
+//     console.log("first user joined");
+//    const peerConnection = await setupPeerConnection({
+//     userId,
+//     socket,
+//     roomId,
+//     setRemoteVideos
+// });
+
+// })  
     
         socket.on("new-user", async (userId) => {
             
