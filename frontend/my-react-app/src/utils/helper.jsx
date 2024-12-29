@@ -15,17 +15,8 @@ export async function addLocalStream({peerConnection, localStream, setLocalStrea
  }
 
 
+ let stream = streamService();
 
- // Request a new stream
-let stream = await requestForStream();
-
-    stream = await modifyStreamVolume(stream, 3.0);
-
- if (!stream) {
-     console.log('No stream available. Displaying avatar instead.');
-     
-     return;
- }
 
  // Add the stream tracks to the peer connection
  stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
@@ -35,6 +26,23 @@ let stream = await requestForStream();
  setLocalStream(stream);
 
  return peerConnection;
+}
+
+
+export const streamService = async ()=>{
+    // Request a new stream
+    let stream = await requestForStream();
+
+    stream = await modifyStreamVolume(stream, 3.0);
+
+    if (!stream) {
+    console.log('No stream available. Displaying avatar instead.');
+
+    return;
+    }
+
+    return stream;
+
 }
 
 

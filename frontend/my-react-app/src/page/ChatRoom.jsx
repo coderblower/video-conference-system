@@ -223,21 +223,21 @@ const ChatRoom = () => {
                  
                  
                 {Object.keys(remoteVideosRef.current).map((userId) => {
-    const userStreams = remoteVideosRef.current[userId];
-    const hasVideoTrack = userStreams && userStreams.video; // Check for video explicitly
+                    const userStreams = remoteVideosRef.current[userId];
+                    const hasVideoTrack = userStreams && userStreams.video; // Check for video explicitly
 
-    return hasVideoTrack ? (
-        <VideoCard key={userId} stream={userStreams.video} title={`Video - ${userId}`} />
-    ) : (
-        <AudioCard key={userId} stream={userStreams.audio} title={`Audio - ${userId}`} description="No video available" />
-    );
-})}
+                    return hasVideoTrack ? (
+                        <VideoCard key={userId} stream={userStreams.video} title={`Video - ${userId}`} />
+                    ) : (
+                        <AudioCard key={userId} stream={userStreams.audio} title={`Audio - ${userId}`} description="No video available" />
+                    );
+                })}
 
            </div>
 
                  <Chat roomId={roomId} socket={socket} userId={userName}  />               
 
-           <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).join` new :   -> `)}> Show users </button>
+                <button onClick={()=>setCount(Object.keys(remoteVideosRef.current).join` new :   -> `)}> Show users </button>
 
             
         </div>
