@@ -24,11 +24,7 @@ function VideoCard({ title, stream, videoSrc, muted }) {
         </div>
         
         {/* Title section */}
-        <div className="flex-[1] px-4 py-2 flex items-center justify-center">
-            <h2 className="font-bold text-[2.5em] uppercase text-[#576c8dbd] text-center">
-                {title}
-            </h2>
-        </div>
+     
     </div>
     );
 }
