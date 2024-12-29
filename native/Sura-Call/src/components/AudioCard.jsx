@@ -1,36 +1,76 @@
-import React, {useState} from 'react';
-import avatar from '../../public/images/avatar.svg'
+import React, { useEffect, useRef } from "react";
+import { View, Text, StyleSheet, Image } from "react-native";
+import avatar from "../../assets/images/avatar.png"; // Replace with a valid local path or asset
+import { MediaStream, RTCView } from "react-native-webrtc";
 
+const AudioCard = ({ title, stream, description, muted }) => {
+  const audioRef = useRef(null);
 
-function AudioCard({ title, stream, description, muted }) {
- 
-    
+  useEffect(() => {
+    if (audioRef.current && stream) {
+      // Attach the audio stream to the audio ref (only works in the browser for WebRTC)
+      try {
+        if (stream instanceof MediaStream) {
+          audioRef.current.srcObject = stream;
+          audioRef.current.muted = muted;
+        }
+      } catch (error) {
+        console.error("Error playing audio:", error);
+      }
+    }
+  }, [stream]);
 
+  return (
+    <View style={styles.card}>
+      {/* Avatar or Placeholder */}
+      <View style={styles.avatarContainer}>
+        <Image source={avatar} style={styles.avatar} resizeMode="contain" />
+      </View>
 
-    return (
-        <div className=" rounded bg-[#8f8f8f63] overflow-hidden shadow-lg bg-white relative flex flex-col">
-            <div className="flex-[4]">
-                         <img className="w-full h-full object-cover" src={avatar} alt={title} />
-                         <audio
-                            className="hidden"
-                            autoPlay
-                            muted = {muted}
-                            ref={(audioElement) => {
-                            if (audioElement && stream) {
-                                audioElement.srcObject = stream;
-                                audioElement.play().catch((error) => {
-                                console.error("Error playing audio:", error);
-                                });
-                            }
-                            }}
-                        />
-            </div>
-            <div className="flex-[1] px-4 py-2 flex items-center justify-center">
-                <h2 className="font-bold text-[2.5em] uppercase text-[#576c8dbd] text-center">{title}</h2>
-            </div>
-          
-        </div>
-    );
-}
+      {/* Title */}
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>{title}</Text>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: "#8f8f8f63",
+    borderRadius: 8,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+    flexDirection: "column",
+    margin: 10,
+  },
+  avatarContainer: {
+    flex: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  avatar: {
+    width: "100%",
+    height: 150,
+  },
+  titleContainer: {
+    flex: 1,
+    padding: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#576c8dbd",
+    textTransform: "uppercase",
+    textAlign: "center",
+  },
+});
 
 export default AudioCard;
