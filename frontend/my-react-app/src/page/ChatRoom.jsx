@@ -44,16 +44,7 @@ const ChatRoom = () => {
             try {
                 socket.emit("join-room", roomId);
     
-                console.log('frie', localStream2)
-                if(!localStream2){
-                    const stream = await streamService();
-                        console.log('rid')
-                    if (stream) {
-                        setLocalStream2(stream);
-                    } else {
-                        console.log("No stream available. Falling back to avatar or other alternatives.");
-                    }
-                }
+            
     
                 // Socket event for when a new user joins
                 socket.on("new-user", async (userId) => {
@@ -224,14 +215,14 @@ const ChatRoom = () => {
 
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
                 
-                { localStream2  && (()=>{
+                { localStream  && (()=>{
                     
-                    const hasVideoTrack = localStream2?.getVideoTracks()?.length > 0;
+                    const hasVideoTrack = localStream?.getVideoTracks()?.length > 0;
                     
                     return hasVideoTrack ? (
-                    <VideoCard key={userName} stream={localStream2} muted = {true} title={`Video - ${userName}`} />
+                    <VideoCard key={userName} stream={localStream} muted = {true} title={`Video - ${userName}`} />
                     ) : (
-                    <AudioCard key={userName} stream={localStream2} muted = {true} title={`Audio - ${userName}`} description="No video available" />
+                    <AudioCard key={userName} stream={localStream} muted = {true} title={`Audio - ${userName}`} description="No video available" />
                     );
                 })()}
                  
