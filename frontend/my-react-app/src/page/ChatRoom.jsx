@@ -300,7 +300,7 @@ const ChatRoom = () => {
                                                     color: '#fff', // Optional, for visibility
                                                     }}>
 
-            <div onClick={handleEndCall}> call end </div> 
+            <div onClick={handleEndCall} style={{cursor:'pointer'}}> call end </div> 
 
             <div> mute </div>
         </div>)}
