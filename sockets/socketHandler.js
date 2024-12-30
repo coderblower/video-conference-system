@@ -62,6 +62,16 @@ function setupSocket(server) {
             }
         });
 
+        socket.on("leaveRoom", (roomId) => {
+            console.log(`User is leaving room: ${roomId}`);
+            
+            // Perform cleanup tasks (e.g., notify other users, remove from room, etc.)
+            socket.leave(roomId);
+        
+            // Optional: Notify other users in the room
+            socket.to(roomId).emit("userLeft", socket.id);
+        });
+
         // Handle disconnection
         socket.on('disconnect', () => {
             console.log('A user disconnected:', socket.id);

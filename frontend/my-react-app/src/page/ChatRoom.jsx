@@ -27,7 +27,7 @@ const ChatRoom = () => {
     const localVideoRef = useRef(null);
     const [remoteVideos, setRemoteVideos] = useState({});
     const { localStream, setLocalStream } = useLocalStream();
-    const [ localStream2, setLocalStream2 ] = useState(null);
+    
    
    
 
@@ -43,7 +43,14 @@ const ChatRoom = () => {
         const initialize = async () => {
             try {
                 socket.emit("join-room", roomId);
-    
+
+                 setupPeerConnection({
+                    userId:socket.id,
+                    socket,
+                    roomId,
+                    setRemoteVideos,
+                });
+
             
     
                 // Socket event for when a new user joins
@@ -76,6 +83,7 @@ const ChatRoom = () => {
     
                 // Socket event for when a user leaves
                 socket.on("user-left", (userId) => {
+                    
                     console.log(`User left: ${userId}`);
                     if (peerConnectionsRef.current[userId]) {
                         peerConnectionsRef.current[userId].close();
@@ -204,6 +212,35 @@ const ChatRoom = () => {
         }
     };
 
+    
+    const handleEndCall = () => {
+        try {
+            // Stop local media streams
+          console.log('fired')
+    
+            if (localStream) {
+                localStream.getTracks().forEach((track) => track.stop());
+                setLocalStream(null);
+            }
+    
+            // Close all peer connections
+            Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+                peerConnection.close();
+            });
+            peerConnectionsRef.current = {};
+    
+            // Clear remote videos
+            setRemoteVideos({});
+    
+            // Leave the socket room
+            socket.emit("leaveRoom", roomId);
+    
+            console.log("Call ended successfully");
+        } catch (error) {
+            console.error("Error ending call:", error);
+        }
+    };
+    
  
     return (
         <div>
@@ -227,7 +264,7 @@ const ChatRoom = () => {
                 })()}
                  
                  
-                {Object.keys(remoteVideosRef.current).map((userId) => {
+                {Object.keys(remoteVideos).map((userId) => {
                     const userStreams = remoteVideosRef.current[userId];
                     const hasVideoTrack = userStreams && userStreams.video; // Check for video explicitly
 
@@ -241,7 +278,24 @@ const ChatRoom = () => {
            </div>
 
               
+        {localStream && (<div className=""         style={{
+                                                    position: 'fixed',
+                                                    bottom: 0,
+                                                    left: '50%',
+                                                    transform: 'translate(-50%, 0)', // Adjust for centering horizontally only
+                                                    background: '#000',
+                                                    height: '50px',
+                                                    width: '60%', // Optional if you want it to stretch across the screen
+                                                    display: 'flex',
+                                                    alignItems: 'center', // Centers content vertically
+                                                    justifyContent: 'space-around', // Centers content horizontally
+                                                    color: '#fff', // Optional, for visibility
+                                                    }}>
 
+            <div onClick={handleEndCall}> call end </div> 
+
+            <div> mute </div>
+        </div>)}
             
         </div>
     );
