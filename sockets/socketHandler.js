@@ -66,10 +66,11 @@ function setupSocket(server) {
             console.log(`User is leaving room: ${roomId}`);
             
             // Perform cleanup tasks (e.g., notify other users, remove from room, etc.)
-            socket.leave(roomId);
+            
         
             // Optional: Notify other users in the room
-            socket.to(roomId).emit("userLeft", socket.id);
+            socket.to(roomId).emit('user-left', socket.id);
+            socket.leave(roomId);
         });
 
         // Handle disconnection

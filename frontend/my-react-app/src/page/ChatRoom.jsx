@@ -13,7 +13,7 @@ import { streamService } from "../utils/helper";
 
 
 // Socket connection
-const socket = io('wss://meeting.mges.global', {
+const socket = io('http://localhost:3000', {
     transports: ["websocket", 'polling'],
 });
 
@@ -94,6 +94,13 @@ const ChatRoom = () => {
                         delete newVideos[userId];
                         return newVideos;
                     });
+                });
+
+
+                socket.on("hi-user", (userId) => {
+                    
+                    console.log(`Hi user : ${userId}`);
+                   
                 });
     
                 // Socket event for handling messages (offers, answers, and ICE candidates)
@@ -216,7 +223,8 @@ const ChatRoom = () => {
     const handleEndCall = () => {
         try {
             // Stop local media streams
-          console.log('fired')
+   
+       
     
             if (localStream) {
                 localStream.getTracks().forEach((track) => track.stop());
