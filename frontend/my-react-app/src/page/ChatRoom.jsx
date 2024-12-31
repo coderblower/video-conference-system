@@ -44,12 +44,12 @@ const ChatRoom = () => {
             try {
                 socket.emit("join-room", roomId);
 
-                //  setupPeerConnection({
-                //     userId:socket.id,
-                //     socket,
-                //     roomId,
-                //     setRemoteVideos,
-                // });
+                 setupPeerConnection({
+                    userId:socket.id,
+                    socket,
+                    roomId,
+                    setRemoteVideos,
+                });
 
             
     
