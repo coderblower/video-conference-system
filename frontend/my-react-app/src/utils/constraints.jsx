@@ -1,5 +1,4 @@
-export const servers = {
-    iceServers: [
+
         export const servers = {
             iceServers: [
                 { urls: "stun:stun.l.google.com:19302" }, // Public STUN server
@@ -10,5 +9,3 @@ export const servers = {
             ],
         };
         
-    ],
-};
