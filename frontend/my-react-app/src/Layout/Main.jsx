@@ -1,12 +1,14 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
+import ProfileMenu from "../components/ProfileMenu";
 
 const Main = () => {
     return (
         <div className="min-h-screen flex flex-col">
             {/* Header */}
-            <header className=" bg-gray-800 text-white p-4">
-                <h1 className="text-2xl font-bold"> সহজ কথা </h1>
+            <header className="flex bg-gray-800 text-white p-4 justify-between">
+                <h1 className="text-2xl font-bold">সহজ কথা</h1>
+                <ProfileMenu />
             </header>
 
             {/* Main content section */}

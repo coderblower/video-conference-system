@@ -5,8 +5,10 @@ const passport = require('passport');
 const session = require('express-session');
 const { dbConnect } = require('./config/db');
 const { setupSocket } = require('./sockets/socketHandler');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 
 
 // Connect to the database
@@ -28,7 +30,7 @@ app.use(passport.initialize());
 // Import and use routes
 const authRoutes = require('./routes/authRoutes.js');
 // const roomRoutes = require('./routes/roomRoutes');
-app.use('/api/auth', authRoutes);
+app.use('/api', authRoutes);
 // app.use('/api/room', roomRoutes);
 
 // Create HTTPS server and set up WebSocket
@@ -36,6 +38,6 @@ const server = http.createServer(app);
 const io = setupSocket(server);
 
 // Start the server
-server.listen(3000, '0.0.0.0', () => {
-    console.log('Server running on http://localhost:3000');
+server.listen(3002, '0.0.0.0', () => {
+    console.log('Server running on http://localhost:3002');
 });

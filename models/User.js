@@ -25,6 +25,7 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  
 }, {
   tableName: 'users',  // Adjust if your table name is different
   timestamps: true,     // Enable createdAt and updatedAt timestamps
