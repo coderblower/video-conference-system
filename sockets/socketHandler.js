@@ -30,7 +30,7 @@ function setupSocket(server) {
             
             users.push(obj);
 
-            console.log( 'new User connected :' users);
+            console.log( 'new User connected :', users);
 
             socket.emit('new-users', users);
         });
