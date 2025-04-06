@@ -15,7 +15,7 @@ import { streamService } from "../utils/helper";
 // Socket connection
 //wss://meeting.mges.global
 
-const socket = io('http://localhost:3002', {
+const socket = io('https://meeting.mges.global/', {
     transports: ["websocket", 'polling'],
 });
 

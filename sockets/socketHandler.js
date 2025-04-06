@@ -10,10 +10,28 @@ function setupSocket(server) {
 
     // Store users in rooms
     const rooms = {};
-    const messages={}
+    const messages={};
+    const users = [];
+
+    
 
     io.on('connection', (socket) => {
         console.log('A user connected:', socket.id);
+
+
+        socket.on('join_online', (userInfo) => {
+
+            console.log(userInfo);
+            let obj = {
+                name: userInfo.name,
+                id: socket.id
+            }
+            users.push(obj);
+
+            console.log( 'new User connected :' users);
+
+            socket.emit('new-users', users);
+        });
         
         
         
