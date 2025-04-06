@@ -22,10 +22,12 @@ function setupSocket(server) {
         socket.on('join_online', (userInfo) => {
 
             console.log(userInfo);
+
             let obj = {
                 name: userInfo.name,
                 id: socket.id
             }
+            
             users.push(obj);
 
             console.log( 'new User connected :' users);
