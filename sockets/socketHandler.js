@@ -24,7 +24,7 @@ function setupSocket(server) {
             console.log(userInfo);
 
             let obj = {
-                name: userInfo.name,
+                data: userInfo,
                 id: socket.id
             }
             
@@ -96,6 +96,9 @@ function setupSocket(server) {
         // Handle disconnection
         socket.on('disconnect', () => {
             console.log('A user disconnected:', socket.id);
+
+            // Remove user from the list of connected users
+            users = users.filter(user => user.id !== socket.id);
 
             // Remove user from all rooms they joined
             for (const roomId in rooms) {
