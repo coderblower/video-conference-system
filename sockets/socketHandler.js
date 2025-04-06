@@ -11,7 +11,7 @@ function setupSocket(server) {
     // Store users in rooms
     const rooms = {};
     const messages={};
-    const users = [];
+    let users = [];
 
     
 
