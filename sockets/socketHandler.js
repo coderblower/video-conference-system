@@ -33,6 +33,9 @@ function setupSocket(server) {
             console.log( 'new User connected :', users);
 
             socket.emit('new-users', users);
+
+            socket.emit('online_user', users);
+            
         });
         
         
