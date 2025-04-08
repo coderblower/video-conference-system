@@ -34,7 +34,7 @@ function setupSocket(server) {
 
             socket.emit('new-users', users);
 
-            socket.emit('online_user', users);
+            io.emit('online_user', users);
             
         });
         
