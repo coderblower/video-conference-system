@@ -65,13 +65,13 @@ function setupSocket(server) {
 
 
         socket.on('make_call', (data) => {
-            const { roomId, to } = data;
-            console.log("call data", data);
+            const { roomId, to, id  } = data;
+            console.log("call data", data, id );
             // Forward the call request to the specified user
-            io.to(to).emit('incoming_call', { from: socket.id, roomId });
+            io.to(id).emit('incoming_call', { from: socket.id, roomId });
         });
 
-        
+
 
         socket.on("chat-message", (roomId, newMessage) => {
             if(!messages[roomId]){
