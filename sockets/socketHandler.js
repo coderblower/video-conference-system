@@ -65,10 +65,10 @@ function setupSocket(server) {
 
 
         socket.on('make_call', (data) => {
-            const { roomId, to, id  } = data;
-            console.log("call data", data, id, roomId );
+            const { room, to, id  } = data;
+            console.log("call data", data, id, room );
             // Forward the call request to the specified user
-            io.to(id).emit('incoming_call', { from: socket.id, roomId });
+            io.to(id).emit('incoming_call', { from: socket.id, room });
         });
 
 
