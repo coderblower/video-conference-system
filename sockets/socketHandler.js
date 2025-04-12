@@ -65,7 +65,7 @@ function setupSocket(server) {
 
 
         socket.on('make_call', (data) => {
-            const { room, to, id  } = data;
+            const { room, to, id  } = data; 
             console.log("call data", data, id, room );
             // Forward the call request to the specified user
             io.to(id).emit('incoming_call', { from: socket.id, room });
@@ -85,6 +85,8 @@ function setupSocket(server) {
         // Handle signaling messages (offer/answer/ICE candidates)
         socket.on('message', (data) => {
             const { roomId, to } = data;
+
+            console.log('Message received:', data);
 
             if (to) {
                 // Forward message to a specific user
