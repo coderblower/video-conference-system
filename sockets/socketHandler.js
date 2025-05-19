@@ -11,7 +11,7 @@ function setupSocket(server) {
     // Store users in rooms
     const rooms = {};
     const messages={};
-    let users = [];
+    let users = {};
 
     
 
@@ -21,14 +21,13 @@ function setupSocket(server) {
 
         socket.on('join_online', (userInfo) => {
 
-            console.log(userInfo);
-
-            let obj = {
-                data: userInfo,
-                id: socket.id
-            }
             
-            users.push(obj);
+
+           if (userInfo && userInfo.id) {
+                users[userInfo.id] = {
+                    socket_id: socket.id
+                };  
+            }
 
             console.log( 'new User connected :', users);
 
@@ -65,10 +64,15 @@ function setupSocket(server) {
 
 
         socket.on('make_call', (data) => {
+
+            
             const { room, to, id  } = data; 
+
+            const socketId = users[id]?.socket_id;
+
             console.log("call data", data, id, room );
             // Forward the call request to the specified user
-            io.to(id).emit('incoming_call', { from: socket.id, room });
+            io.to(socketId).emit('incoming_call', { from: socket.id, room });
         });
 
 
