@@ -70,9 +70,14 @@ function setupSocket(server) {
 
             const socketId = users[id]?.socket_id;
 
-            console.log("call data", data, id, room );
+            console.log("call data", data, id, room, users);
+
             // Forward the call request to the specified user
             io.to(socketId).emit('incoming_call', { from: socket.id, room });
+        });
+
+        socket.on('check_user', () => {      
+            socket.emit('get_user', users);
         });
 
 
@@ -116,8 +121,13 @@ function setupSocket(server) {
         socket.on('disconnect', () => {
             console.log('A user disconnected:', socket.id);
 
-            // Remove user from the list of connected users
-            users = users.filter(user => user.id !== socket.id);
+            // Remove user from the users object
+            for (const userId in users) {
+                if (users[userId].socket_id === socket.id) {
+                    delete users[userId];
+                    break;
+                }
+            }
 
             // Remove user from all rooms they joined
             for (const roomId in rooms) {
@@ -131,7 +141,11 @@ function setupSocket(server) {
                     delete rooms[roomId];
                 }
             }
+
+            // Optionally, notify everyone of the updated online users
+            io.emit('online_user', users);
         });
+
     });
 
     return io;
