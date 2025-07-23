@@ -174,14 +174,20 @@ function setupSocket(server) {
         // Handle disconnection
         socket.on('disconnect', () => {
 
-            console.log('A user disconnected:', socket.id);
+            console.log('A user disconnected:', socket.id, userId );
 
 
             //remove users from array in users object
-            for (const userId in users) {
-                users[userId] = users[userId].filter(id => id !== socket.id);
-            }
 
+            
+
+            
+             users = Object.keys(users).reduce((acc, userId) => {
+                acc[userId] = users[userId].filter(user => user.socket_id !== socket.id);
+                return acc;
+            }, {});
+
+            
             // Remove user from the users object
             // for (const userId in users) {
             //     if (users[userId].socket_id === socket.id) {
