@@ -174,7 +174,7 @@ function setupSocket(server) {
         // Handle disconnection
         socket.on('disconnect', () => {
 
-            console.log('A user disconnected:', socket.id, userId );
+            console.log('A user disconnected:', socket.id );
 
 
             //remove users from array in users object
