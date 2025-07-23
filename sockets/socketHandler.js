@@ -31,7 +31,7 @@ function setupSocket(server) {
 
 
             if (userInfo && userInfo.id) {
-                users[userInfo.id] = [...users[socket.id] || [], {
+                users[userInfo.id] = [...users[userInfo.id] || [], {
                     name: userInfo.firstName + ' ' + userInfo.lastName,
                     socket_id: socket.id
                 }];
