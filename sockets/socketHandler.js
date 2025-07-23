@@ -27,8 +27,11 @@ function setupSocket(server) {
 
             socket.on('join_online', (userInfo) => {
 
+
+            
+
             if (userInfo && userInfo.id) {
-                users[socket.id] = [...users[socket.id] || [], {
+                users[userInfo.id] = [...users[socket.id] || [], {
                     name: userInfo.firstName + ' ' + userInfo.lastName,
                     socket_id: socket.id
                 }];
@@ -75,6 +78,8 @@ function setupSocket(server) {
 
             
             const { room, to, id  } = data; 
+
+            console.log('Making call to:', to, 'in room:', room, 'id :', id);
             // call to all users[id] array
             const userSockets = users[id]?.map(user => user.socket_id) || [];
             userSockets.forEach(socketId => {
