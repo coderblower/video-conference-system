@@ -27,13 +27,9 @@ function setupSocket(server) {
 
         socket.on('join_online', (userInfo) => {
 
-
-
-
-            
-
            if (userInfo && userInfo.id) {
                 users[userInfo.id] = {
+                    userInfo: userInfo,
                     socket_id: socket.id
                 };  
             }
