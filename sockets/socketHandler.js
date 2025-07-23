@@ -13,6 +13,12 @@ function setupSocket(server) {
     const messages={};
     let users = {};
 
+
+    
+    setInterval(() => {
+        // Emit online users every 10 seconds
+        console.log('Online users:', users);
+    }, 5000);
     
 
     io.on('connection', (socket) => {
@@ -20,6 +26,9 @@ function setupSocket(server) {
 
 
         socket.on('join_online', (userInfo) => {
+
+
+
 
             
 
