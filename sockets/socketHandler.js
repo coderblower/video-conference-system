@@ -25,14 +25,17 @@ function setupSocket(server) {
         console.log('A user connected:', socket.id);
 
 
-        socket.on('join_online', (userInfo) => {
+            socket.on('join_online', (userInfo) => {
 
-           if (userInfo && userInfo.id) {
-                users[userInfo.id] = {
-                    userInfo: userInfo,
+            if (userInfo && userInfo.id) {
+                users[socket.id] = [...users[socket.id] || [], {
+                    name: userInfo.firstName + ' ' + userInfo.lastName,
                     socket_id: socket.id
-                };  
+                }];
+            
             }
+
+          
 
             console.log( 'new User connected :', users);
 
@@ -72,19 +75,60 @@ function setupSocket(server) {
 
             
             const { room, to, id  } = data; 
+            // call to all users[id] array
+            const userSockets = users[id]?.map(user => user.socket_id) || [];
+            userSockets.forEach(socketId => {
+                io.to(socketId).emit('incoming_call', { from: socket.id, room });
+            });
 
-            const socketId = users[id]?.socket_id;
 
-            console.log("call data", data, id, room, users);
-
-            // Forward the call request to the specified user
-            io.to(socketId).emit('incoming_call', { from: socket.id, room });
         });
+
+
+        
+
+        // this is for ending all ring for all users except the one accepting the call
+
+
+
+        socket.on('reject_all_caller', (data) => {   
+            const { room, to } = data; 
+
+            //I want only ending call all user except socket.id user in users object
+            const userSockets = Object.values(users).flat().map(user => user.socket_id);
+                    
+            userSockets.forEach(socketId => {
+                io.to(socketId).emit('end_call', { from: socket.id, room });
+            });
+
+        });
+
+
+
+        socket.on('request_end_call', (data) => {
+            const { room, to } = data; 
+
+            // Iant to emmit end_call to only data.to .
+
+            if (!to) {
+                console.error("No recipient specified for end_call.");  
+                return;
+            }   
+            console.log('Ending call for:', to, 'in room:', room);
+
+            // Emit end_call to the specific user
+            io.to(to).emit('end_call', { from: socket.id, room });     
+           
+        }); 
+
+
 
         socket.on('check_user', () => {      
             socket.emit('get_user', users);
         });
 
+
+      
 
 
         socket.on("chat-message", (roomId, newMessage) => {
@@ -124,15 +168,22 @@ function setupSocket(server) {
 
         // Handle disconnection
         socket.on('disconnect', () => {
+
             console.log('A user disconnected:', socket.id);
 
-            // Remove user from the users object
+
+            //remove users from array in users object
             for (const userId in users) {
-                if (users[userId].socket_id === socket.id) {
-                    delete users[userId];
-                    break;
-                }
+                users[userId] = users[userId].filter(id => id !== socket.id);
             }
+
+            // Remove user from the users object
+            // for (const userId in users) {
+            //     if (users[userId].socket_id === socket.id) {
+            //         delete users[userId];
+            //         break;
+            //     }
+            // }
 
             // Remove user from all rooms they joined
             for (const roomId in rooms) {
@@ -148,7 +199,7 @@ function setupSocket(server) {
             }
 
             // Optionally, notify everyone of the updated online users
-            io.emit('online_user', users);
+            // io.emit('online_user', users);
         });
 
     });
