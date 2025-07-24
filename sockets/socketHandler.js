@@ -184,6 +184,13 @@ function setupSocket(server) {
             
              users = Object.keys(users).reduce((acc, userId) => {
                 acc[userId] = users[userId].filter(user => user.socket_id !== socket.id);
+                if( acc[userId].length === 0) {
+                    delete acc[userId]; // Remove userId if no sockets left 
+                }
+                if (Object.keys(acc).length === 0) {    
+                    acc = {}; // Reset users if empty
+                }
+                console.log('Updated users:', acc);
                 return acc;
             }, {});
 
