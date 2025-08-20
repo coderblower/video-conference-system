@@ -1,4 +1,5 @@
 const {Server} = require('socket.io');
+const { sendCallNotification } = require('../helpers/fcmHelper');
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -89,8 +90,15 @@ function setupSocket(server) {
 
         });
 
+        socket.on('send_fcm_message', (data) => {
+            const { to, title, body, roomId } = data;
 
-        
+            // Find the user's device token
+            const user = Object.values(users).flat().find(user => user.socket_id === to);
+            if (user) {
+                sendCallNotification(user.id, title, body, { roomId });
+            }
+        });
 
         // this is for ending all ring for all users except the one accepting the call
 
@@ -107,8 +115,6 @@ function setupSocket(server) {
             });
 
         });
-
-
 
         socket.on('request_end_call', (data) => {
             const { room, to } = data; 
@@ -127,15 +133,11 @@ function setupSocket(server) {
         }); 
 
 
-
         socket.on('check_user', () => {      
             socket.emit('get_user', users);
         });
 
-
-      
-
-
+ 
         socket.on("chat-message", (roomId, newMessage) => {
             if(!messages[roomId]){
                 messages[roomId] = [];
@@ -155,7 +157,7 @@ function setupSocket(server) {
                 // Forward message to a specific user
                 io.to(to).emit('message', { ...data, from: socket.id });
             } else {
-                // Broadcast to all users in the room except sender
+                // Broadcast to all user s in the room except sender
                 socket.to(roomId).emit('message', { ...data, from: socket.id });
             }
         });
