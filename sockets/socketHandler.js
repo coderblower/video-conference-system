@@ -133,6 +133,8 @@ function setupSocket(server) {
         }); 
 
 
+
+
         socket.on('check_user', () => {      
             socket.emit('get_user', users);
         });

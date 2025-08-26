@@ -1,12 +1,5 @@
 
 
-/**
- * Send an FCM notification to a device token
- * @param {string} token - FCM device token
- * @param {string} title - Notification title
- * @param {string} body - Notification body
- * @param {Object} data - Custom data payload
- */
 
 const admin = require("firebase-admin");
 const serviceAccount = require("../secrets/auth.json"); // path to the downloaded JSON
