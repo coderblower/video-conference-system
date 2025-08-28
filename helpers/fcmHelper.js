@@ -54,6 +54,8 @@ async function sendCallNotification(calleeId, roomId, callerName) {
       const token = deviceDoc.data().fcmToken;
       if (!token) return null;
 
+      console.log(roomId)
+
       return sendFCM(token, "Incoming Call 📞", `${callerName} is calling you`, {
         type: "CALL",
         callerName,
