@@ -40,7 +40,7 @@ async function sendFCM(token, title, body, data = {}) {
  * @param {string} callerName - Name of caller
  * @param {string} roomId - Call room ID
  */
-async function sendCallNotification(calleeId, roomId, callerName) {
+async function sendCallNotification(calleeId, roomId, callerName="hello") {
   try {
     const userDocRef = admin.firestore().collection("users").doc(calleeId);
     const devicesSnapshot = await userDocRef.collection("devices").get();
