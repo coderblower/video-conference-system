@@ -58,6 +58,7 @@ async function sendCallNotification(calleeId, roomId, callerName) {
       });
     });
 
+    
     await Promise.all(sendPromises.filter(Boolean));
     console.log("Call notification sent to all devices of:", calleeId);
 
