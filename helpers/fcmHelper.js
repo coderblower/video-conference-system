@@ -19,17 +19,20 @@ async function sendFCM(token, title, body, data = {}) {
     return;
   }
 
-  const payload = {
+  const message = {
+    token, // 👈 instead of sendToDevice
     notification: { title, body },
     data,
-  }; 
+  };
+
   try {
-    const response = await admin.messaging().sendToDevice(token, payload);
+    const response = await admin.messaging().send(message);
     console.log("FCM sent successfully:", response);
   } catch (error) {
     console.error("Error sending FCM:", error);
   }
 }
+
 
 /**
  * Send a call notification by callee userId
