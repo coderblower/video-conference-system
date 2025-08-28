@@ -91,12 +91,12 @@ function setupSocket(server) {
         });
 
         socket.on('send_fcm_message', (data) => {
-            const { to, title, body, roomId } = data;
+            const { userId,  roomId } = data;
 
             // Find the user's device token
-            const user = Object.values(users).flat().find(user => user.socket_id === to);
-            if (user) {
-                sendCallNotification(user.id, title, body, { roomId });
+            
+            if (userId) {
+                sendCallNotification(userId, roomId);
             }
         });
 

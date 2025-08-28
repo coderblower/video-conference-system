@@ -22,8 +22,7 @@ async function sendFCM(token, title, body, data = {}) {
   const payload = {
     notification: { title, body },
     data,
-  };
-
+  }; 
   try {
     const response = await admin.messaging().sendToDevice(token, payload);
     console.log("FCM sent successfully:", response);
@@ -38,19 +37,29 @@ async function sendFCM(token, title, body, data = {}) {
  * @param {string} callerName - Name of caller
  * @param {string} roomId - Call room ID
  */
-async function sendCallNotification(calleeId, callerName, roomId) {
+async function sendCallNotification(calleeId, roomId, callerName) {
   try {
-    const userDoc = await admin.firestore().collection("users").doc(calleeId).get();
-    if (!userDoc.exists) return console.log("User not found:", calleeId);
+    const userDocRef = admin.firestore().collection("users").doc(calleeId);
+    const devicesSnapshot = await userDocRef.collection("devices").get();
 
-    const token = userDoc.data().deviceToken;
-    if (!token) return console.log("No device token for user:", calleeId);
+    if (devicesSnapshot.empty) {
+      return console.log("No devices found for user:", calleeId);
+    }
 
-    await sendFCM(token, "Incoming Call 📞", `${callerName} is calling you`, {
-      type: "CALL",
-      callerName,
-      roomId,
+    // Loop through all device docs
+    const sendPromises = devicesSnapshot.docs.map((deviceDoc) => {
+      const token = deviceDoc.data().fcmToken;
+      if (!token) return null;
+
+      return sendFCM(token, "Incoming Call 📞", `${callerName} is calling you`, {
+        type: "CALL",
+        callerName,
+        roomId,
+      });
     });
+
+    await Promise.all(sendPromises.filter(Boolean));
+    console.log("Call notification sent to all devices of:", calleeId);
 
   } catch (err) {
     console.error("Error sending call notification:", err);
