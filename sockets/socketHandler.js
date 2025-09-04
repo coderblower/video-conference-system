@@ -75,6 +75,11 @@ function setupSocket(server) {
         });
 
 
+        socket.on('check_room_id', (data)=>{
+            console.log(data);
+        })
+
+
         socket.on('make_call', (data) => {
 
             
