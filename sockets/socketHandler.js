@@ -1,5 +1,5 @@
 const {Server} = require('socket.io');
-const { sendCallNotification } = require('../helpers/fcmHelper');
+const { sendCallNotification, sendDataOnlyCallNotification } = require('../helpers/fcmHelper');
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -95,17 +95,302 @@ function setupSocket(server) {
 
         });
 
-        socket.on('send_fcm_message', (data) => {
-            const { userId,  roomId } = data;
-
-            console.log(roomId, 'room id ');
-
-            // Find the user's device token
-            
-            if (userId) {
-                sendCallNotification(userId, roomId);
-            }
+socket.on('send_fcm_message', async (data) => {
+    try {
+        const { userId, roomId, callerName, callerId } = data;
+        
+        console.log('📞 Incoming FCM call request:', {
+            userId,
+            roomId,
+            callerName,
+            callerId,
+            timestamp: new Date().toISOString()
         });
+
+        // Validate required data
+        if (!userId) {
+            console.error('❌ Error: userId is required');
+            socket.emit('fcm_error', { error: 'userId is required' });
+            return;
+        }
+
+        if (!roomId) {
+            console.error('❌ Error: roomId is required');
+            socket.emit('fcm_error', { error: 'roomId is required' });
+            return;
+        }
+
+        const finalCallerName = callerName || 'Unknown Caller';
+        
+        console.log(`📡 Sending call notification to user: ${userId}, room: ${roomId}`);
+
+        // Send both regular and data-only notifications for maximum compatibility
+        const [regularResult, dataOnlyResult] = await Promise.allSettled([
+            sendCallNotification(userId, roomId, finalCallerName),
+            sendDataOnlyCallNotification(userId, roomId, finalCallerName)
+        ]);
+
+        // Log results
+        if (regularResult.status === 'fulfilled') {
+            console.log('✅ Regular FCM notification result:', regularResult.value);
+        } else {
+            console.error('❌ Regular FCM notification failed:', regularResult.reason);
+        }
+
+        if (dataOnlyResult.status === 'fulfilled') {
+            console.log('✅ Data-only FCM notification result:', dataOnlyResult.value);
+        } else {
+            console.error('❌ Data-only FCM notification failed:', dataOnlyResult.reason);
+        }
+
+        // Emit success response back to caller
+        const success = (regularResult.status === 'fulfilled' && regularResult.value.success) ||
+                       (dataOnlyResult.status === 'fulfilled' && dataOnlyResult.value.success);
+
+        if (success) {
+            socket.emit('fcm_sent', {
+                success: true,
+                userId,
+                roomId,
+                message: 'Call notification sent successfully'
+            });
+            console.log('✅ FCM call notification sent successfully');
+        } else {
+            socket.emit('fcm_error', {
+                error: 'Failed to send FCM notification',
+                userId,
+                roomId
+            });
+            console.error('❌ All FCM notification attempts failed');
+        }
+
+    } catch (error) {
+        console.error('❌ Fatal error in send_fcm_message handler:', error);
+        socket.emit('fcm_error', {
+            error: 'Internal server error',
+            details: error.message
+        });
+    }
+});
+
+// 🔥 NEW: Enhanced call initiation handler with caller info
+socket.on('initiate_call', async (data) => {
+    try {
+        const { 
+            calleeId, 
+            callerId, 
+            roomId, 
+            callerName, 
+            callerAvatar,
+            callType = 'video' // 'video' or 'audio'
+        } = data;
+
+        console.log('🚀 Call initiation request:', {
+            calleeId,
+            callerId, 
+            roomId,
+            callerName,
+            callType,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!calleeId || !callerId || !roomId) {
+            socket.emit('call_error', { 
+                error: 'Missing required fields: calleeId, callerId, roomId' 
+            });
+            return;
+        }
+
+        // Get caller info from database if not provided
+        let finalCallerName = callerName;
+        let finalCallerAvatar = callerAvatar;
+
+        if (!finalCallerName && callerId) {
+            try {
+                const callerDoc = await admin.firestore()
+                    .collection('users')
+                    .doc(callerId)
+                    .get();
+                
+                if (callerDoc.exists) {
+                    const callerData = callerDoc.data();
+                    finalCallerName = callerData.name || callerData.displayName || 'Unknown Caller';
+                    finalCallerAvatar = callerData.avatar || callerData.photoURL || null;
+                }
+            } catch (dbError) {
+                console.error('⚠️ Could not fetch caller info:', dbError);
+                finalCallerName = 'Unknown Caller';
+            }
+        }
+
+        // Send FCM notification with enhanced data
+        const fcmData = {
+            type: "CALL",
+            callerName: finalCallerName,
+            callerId,
+            roomId,
+            callType,
+            callerAvatar: finalCallerAvatar || '',
+            callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: Date.now().toString(),
+        };
+
+        console.log('📱 Sending enhanced FCM with data:', fcmData);
+
+        const result = await sendCallNotification(calleeId, roomId, finalCallerName);
+        
+        if (result.success) {
+            // Store call record in database for tracking
+            try {
+                await admin.firestore().collection('calls').add({
+                    callId: fcmData.callId,
+                    callerId,
+                    calleeId,
+                    roomId,
+                    callerName: finalCallerName,
+                    callType,
+                    status: 'initiated',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            } catch (dbError) {
+                console.error('⚠️ Could not store call record:', dbError);
+            }
+
+            socket.emit('call_initiated', {
+                success: true,
+                callId: fcmData.callId,
+                roomId,
+                message: 'Call notification sent successfully'
+            });
+        } else {
+            socket.emit('call_error', {
+                error: 'Failed to send call notification',
+                calleeId,
+                roomId
+            });
+        }
+
+    } catch (error) {
+        console.error('❌ Error in initiate_call handler:', error);
+        socket.emit('call_error', {
+            error: 'Failed to initiate call',
+            details: error.message
+        });
+    }
+});
+
+// 🔥 NEW: Handle call status updates
+socket.on('call_status_update', async (data) => {
+    try {
+        const { callId, status, roomId } = data;
+        // status can be: 'accepted', 'declined', 'ended', 'missed'
+        
+        console.log('📞 Call status update:', { callId, status, roomId });
+
+        // Update call record in database
+        if (callId) {
+            try {
+                const callQuery = await admin.firestore()
+                    .collection('calls')
+                    .where('callId', '==', callId)
+                    .limit(1)
+                    .get();
+
+                if (!callQuery.empty) {
+                    const callDoc = callQuery.docs[0];
+                    await callDoc.ref.update({
+                        status,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        ...(status === 'ended' && { endedAt: admin.firestore.FieldValue.serverTimestamp() })
+                    });
+                    console.log(`✅ Call ${callId} status updated to: ${status}`);
+                } else {
+                    console.warn(`⚠️ Call record not found for callId: ${callId}`);
+                }
+            } catch (dbError) {
+                console.error('❌ Error updating call status:', dbError);
+            }
+        }
+
+        // Broadcast status to room participants
+        if (roomId) {
+            socket.to(roomId).emit('call_status_changed', {
+                callId,
+                status,
+                timestamp: Date.now()
+            });
+        }
+
+        socket.emit('call_status_updated', { success: true, callId, status });
+
+    } catch (error) {
+        console.error('❌ Error in call_status_update handler:', error);
+        socket.emit('call_error', {
+            error: 'Failed to update call status',
+            details: error.message
+        });
+    }
+});
+
+// 🔥 NEW: Join call room
+socket.on('join_call_room', (data) => {
+    try {
+        const { roomId, userId, userType } = data; // userType: 'caller' or 'callee'
+        
+        console.log(`👥 User ${userId} joining call room: ${roomId} as ${userType}`);
+        
+        socket.join(roomId);
+        
+        // Notify other participants
+        socket.to(roomId).emit('user_joined_call', {
+            userId,
+            userType,
+            timestamp: Date.now()
+        });
+
+        socket.emit('joined_call_room', {
+            success: true,
+            roomId,
+            message: 'Successfully joined call room'
+        });
+
+    } catch (error) {
+        console.error('❌ Error joining call room:', error);
+        socket.emit('call_error', {
+            error: 'Failed to join call room',
+            details: error.message
+        });
+    }
+});
+
+// 🔥 NEW: Leave call room
+socket.on('leave_call_room', (data) => {
+    try {
+        const { roomId, userId } = data;
+        
+        console.log(`👋 User ${userId} leaving call room: ${roomId}`);
+        
+        socket.leave(roomId);
+        
+        // Notify other participants
+        socket.to(roomId).emit('user_left_call', {
+            userId,
+            timestamp: Date.now()
+        });
+
+        socket.emit('left_call_room', {
+            success: true,
+            roomId,
+            message: 'Successfully left call room'
+        });
+
+    } catch (error) {
+        console.error('❌ Error leaving call room:', error);
+    }
+});
+
+console.log('📡 Enhanced FCM and call management socket handlers registered');
+
 
         // this is for ending all ring for all users except the one accepting the call
 
