@@ -126,7 +126,6 @@ socket.on('send_fcm_message', async (data) => {
 
         // Send both regular and data-only notifications for maximum compatibility
         const [regularResult, dataOnlyResult] = await Promise.allSettled([
-            sendCallNotification(userId, roomId, finalCallerName),
             sendDataOnlyCallNotification(userId, roomId, finalCallerName)
         ]);
 
