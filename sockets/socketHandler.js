@@ -382,6 +382,9 @@ function setupSocket(server) {
                         roomId,
                         message: 'Call notification sent successfully'
                     });
+
+                    socket.emit('ringing_call', { roomId });
+                    
                     
                     // Also emit to other user devices
                     const userSockets = users[userId]?.map(user => user.socket_id) || [];
