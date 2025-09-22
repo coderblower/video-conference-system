@@ -36,6 +36,9 @@ function setupSocket(server) {
 
         socket.emit('connected', socket.id);
 
+
+        
+
         // Enhanced user join with presence
         socket.on('join_online', (userInfo) => {
             if (userInfo && userInfo.id) {
@@ -145,6 +148,11 @@ function setupSocket(server) {
                 });
             }
         });
+
+        socket.on('end_call', () => {
+            socket.emit('call_ended');
+        });
+
 
         // Call status updates
         socket.on('call_status_update', async (data) => {
