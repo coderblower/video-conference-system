@@ -164,6 +164,7 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
             timestamp: Date.now().toString(),
             title: "Incoming Call",
             body: `${callerName} is calling you`,
+            calleeId,
           }
         },
         data: {
@@ -174,6 +175,7 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
           timestamp: Date.now().toString(),
           title: "Incoming Call",
           body: `${callerName} is calling you`,
+          calleeId,
         },
       };
 

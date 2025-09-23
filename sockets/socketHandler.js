@@ -149,18 +149,23 @@ function setupSocket(server) {
             }
         });
 
+
         socket.on('end_call', () => {
-            console.log('📞 Call ended by socket:', socket.id);
+            console.log('📞 Call ended by socket:', socket.id, users);
+            
             socket.emit('call_ended');
         });
 
         socket.on('end_call_decline', (data) => {
             
+    
 
-
-            console.log('❌ Call declined by socket:', socket.id);
+            console.log('❌ Call declined by socket:', socket.id, users);
+            // wnat to to send to all user except the current socket.id  
             
-            socket.emit('call_declined');
+
+            // 
+
         });
 
         // Call status updates
