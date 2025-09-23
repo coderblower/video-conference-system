@@ -158,16 +158,46 @@ function setupSocket(server) {
             socket.emit('call_ended');
         });
 
+        
+
+
+
         socket.on('end_call_decline', (data) => {
-            
-    
+            try {
+                const { callID } = data;
+                const decliningUserId = activeUsers[socket.id]?.userId;
 
-            console.log('❌ Call declined by socket:', socket.id, users);
-            // wnat to to send to all user except the current socket.id  
-            
+                console.log('❌ Call declined by socket:', socket.id, 'decliningUserId:', decliningUserId, 'callID (user.id):', callID);
 
-            // 
+                // Find all socket IDs for users with userId matching callID
+                const activeUserSockets = Object.keys(activeUsers).filter(socketId => {
+                    const user = activeUsers[socketId];
+                    return user.userId === callID;
+                });
 
+                // Emit call_declined to all relevant sockets
+                activeUserSockets.forEach(socketId => {
+                    io.to(socketId).emit('call_declined', {
+                        callID,
+                        declinedBy: decliningUserId || socket.id, // Use userId if available, else socket.id
+                        timestamp: Date.now()
+                    });
+                });
+
+                // Clean up any active calls where callID (user.id) is a participant
+                Object.keys(activeCalls).forEach(roomId => {
+                    if (activeCalls[roomId].participants.includes(callID)) {
+                        delete activeCalls[roomId];
+                    }
+                });
+
+            } catch (error) {
+                console.error('❌ Error in end_call_decline:', error);
+                socket.emit('call_error', {
+                    error: 'Failed to process call decline',
+                    details: error.message
+                });
+            }
         });
 
         // Call status updates
