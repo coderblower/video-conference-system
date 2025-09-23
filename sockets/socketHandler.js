@@ -170,7 +170,7 @@ function setupSocket(server) {
                 // Find all socket IDs for users with userId matching callID
                 const activeUserSockets = Object.keys(activeUsers).filter(socketId => {
                     const user = activeUsers[socketId];
-                    return user.userId === decliningUserId;
+                    return user.userId === callID;
                 });
 
                 // Emit call_declined to all relevant sockets
