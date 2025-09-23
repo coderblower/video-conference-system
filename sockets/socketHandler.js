@@ -154,6 +154,13 @@ function setupSocket(server) {
             socket.emit('call_ended');
         });
 
+        socket.on('end_call_decline', (data) => {
+            const { callId } = data;
+            
+
+            console.log('📞 Call declined in room:', callId);
+            socket.emit('call_declined', { callId });
+        });
 
         // Call status updates
         socket.on('call_status_update', async (data) => {
