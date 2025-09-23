@@ -412,8 +412,8 @@ function setupSocket(server) {
                     timestamp: new Date().toISOString()
                 });
 
-                if (!userId || !roomId) {
-                    socket.emit('fcm_error', { error: 'userId and roomId are required' });
+                if (!callee || !roomId) {
+                    socket.emit('fcm_error', { error: 'callee and roomId are required' });
                     return;
                 }
 
@@ -433,7 +433,7 @@ function setupSocket(server) {
                     
                     
                     // Also emit to other user devices
-                    const userSockets = users[userId]?.map(user => user.socket_id) || [];
+                    const userSockets = users[callee]?.map(user => user.socket_id) || [];
                     userSockets.forEach(socketId => {
                         io.to(socketId).emit('incoming_call', { 
                             from: socket.id, 
@@ -446,7 +446,7 @@ function setupSocket(server) {
                 } else {
                     socket.emit('fcm_error', {
                         error: 'Failed to send FCM notification',
-                        userId,
+                        callee,
                         roomId
                     });
                 }
