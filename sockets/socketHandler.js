@@ -150,6 +150,7 @@ function setupSocket(server) {
         });
 
         socket.on('end_call', () => {
+            console.log('📞 Call ended by socket:', socket.id);
             socket.emit('call_ended');
         });
 
