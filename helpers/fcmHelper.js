@@ -165,7 +165,7 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
             title: "Incoming Call",
             body: `${callerName} is calling you`,
             calleeId,
-            callerId
+            callerId: callerId.toString(),
           }
         },
         data: {
