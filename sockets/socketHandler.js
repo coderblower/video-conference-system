@@ -175,6 +175,8 @@ function setupSocket(server) {
 
                 // Emit call_declined to all relevant sockets
                 activeUserSockets.forEach(socketId => {
+
+                    console.log('❌ Notifying socket of call decline:', socketId, 'for callID (user.id):', callID);
                     io.to(socketId).emit('call_declined', {
                         callID,
                         declinedBy: decliningUserId || socket.id, // Use userId if available, else socket.id
