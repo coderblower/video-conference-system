@@ -155,11 +155,12 @@ function setupSocket(server) {
         });
 
         socket.on('end_call_decline', (data) => {
-            const { callId } = data;
             
 
-            console.log('📞 Call declined in room:', callId);
-            socket.emit('call_declined', { callId });
+
+            console.log('❌ Call declined by socket:', socket.id);
+            
+            socket.emit('call_declined');
         });
 
         // Call status updates
