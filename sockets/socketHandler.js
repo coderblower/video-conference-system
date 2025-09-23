@@ -27,7 +27,7 @@ function setupSocket(server) {
         });
         console.log('🕒 Active Users:', activeUsers);
         console.log('🕒 All Users:', users);
-    }, 10000);
+    }, 30000);
 
     io.on('connection', (socket) => {
         console.log('🔗 User connected:', socket.id);
