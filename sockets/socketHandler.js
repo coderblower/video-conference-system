@@ -25,7 +25,9 @@ function setupSocket(server) {
             activeCalls: Object.keys(activeCalls).length,
             rooms: Object.keys(rooms).length
         });
-    }, 30000);
+        console.log('🕒 Active Users:', activeUsers);
+        console.log('🕒 All Users:', users);
+    }, 10000);
 
     io.on('connection', (socket) => {
         console.log('🔗 User connected:', socket.id);
@@ -152,7 +154,7 @@ function setupSocket(server) {
 
         socket.on('end_call', () => {
             console.log('📞 Call ended by socket:', socket.id, users);
-            
+
             socket.emit('call_ended');
         });
 
