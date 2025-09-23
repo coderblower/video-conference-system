@@ -37,9 +37,7 @@ function setupSocket(server) {
         };
 
         socket.emit('connected', socket.id);
-
-
-        
+    
 
         // Enhanced user join with presence
         socket.on('join_online', (userInfo) => {
@@ -184,13 +182,7 @@ function setupSocket(server) {
                     });
                 });
 
-                // Clean up any active calls where callID (user.id) is a participant
-                Object.keys(activeCalls).forEach(roomId => {
-                    if (activeCalls[roomId].participants.includes(callID)) {
-                        delete activeCalls[roomId];
-                    }
-                });
-
+              
             } catch (error) {
                 console.error('❌ Error in end_call_decline:', error);
                 socket.emit('call_error', {
@@ -410,10 +402,10 @@ function setupSocket(server) {
         // Legacy support - Enhanced FCM messaging
         socket.on('send_fcm_message', async (data) => {
             try {
-                const { userId, roomId, callerName, callerId } = data;
+                const { callee, roomId, callerName, callerId } = data;
                 
                 console.log('📞 FCM call request:', {
-                    userId,
+                    callee,
                     roomId,
                     callerName,
                     callerId,
@@ -427,12 +419,12 @@ function setupSocket(server) {
 
                 const finalCallerName = callerName || 'Unknown Caller';
                 
-                const result = await sendDataOnlyCallNotification(userId, roomId, finalCallerName);
+                const result = await sendDataOnlyCallNotification(callee, roomId, finalCallerName, callerId);
                 
                 if (result.success) {
                     socket.emit('fcm_sent', {
                         success: true,
-                        userId,
+                        callee,
                         roomId,
                         message: 'Call notification sent successfully'
                     });

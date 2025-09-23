@@ -137,7 +137,7 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
 }
 
 // 🔥 NEW: Function to send high-priority data-only message for better terminated app handling
-async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unknown Caller") {
+async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId) {
   try {
     const userDocRef = admin.firestore().collection("users").doc(calleeId);
     const devicesSnapshot = await userDocRef.collection("devices").get();
@@ -165,6 +165,7 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
             title: "Incoming Call",
             body: `${callerName} is calling you`,
             calleeId,
+            callerId
           }
         },
         data: {
@@ -176,6 +177,7 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
           title: "Incoming Call",
           body: `${callerName} is calling you`,
           calleeId,
+          callerId
         },
       };
 
