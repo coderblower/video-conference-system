@@ -150,53 +150,122 @@ function setupSocket(server) {
         });
 
 
-        socket.on('end_call', () => {
-            console.log('📞 Call ended by socket:', socket.id, users);
+      
 
-            socket.emit('call_ended');
+        // Enhanced end call handler
+socket.on('end_call', (data) => {
+    try {
+        const { roomId, from, to, endedBy, timestamp } = data;
+        
+        console.log('📞 Call ended:', {
+            roomId,
+            from,
+            to,
+            endedBy,
+            timestamp: new Date(timestamp || Date.now()).toISOString()
         });
+
+        // Clean up active call
+        if (activeCalls[roomId]) {
+            activeCalls[roomId].status = 'ended';
+            activeCalls[roomId].endedBy = endedBy;
+            activeCalls[roomId].endedAt = new Date();
+        }
+
+        // Notify the specific recipient
+        if (to) {
+            const recipientSockets = Object.keys(activeUsers).filter(socketId => {
+                return activeUsers[socketId].userId == to;
+            });
+
+            recipientSockets.forEach(socketId => {
+                io.to(socketId).emit('call_ended', {
+                    roomId,
+                    from,
+                    endedBy,
+                    timestamp: timestamp || Date.now()
+                });
+                console.log('📞 Notified socket of call end:', socketId, 'for user:', to);
+            });
+        }
+
+        // Also broadcast to room participants as fallback
+        socket.to(roomId).emit('call_ended', {
+            roomId,
+            endedBy,
+            timestamp: timestamp || Date.now()
+        });
+
+        // Clean up call data after delay
+        setTimeout(() => {
+            delete activeCalls[roomId];
+        }, 5000);
+
+        socket.emit('call_end_confirmed', {
+            success: true,
+            roomId
+        });
+
+    } catch (error) {
+        console.error('❌ Error in end_call handler:', error);
+        socket.emit('call_error', {
+            error: 'Failed to end call',
+            details: error.message
+        });
+    }
+});
+
+
 
         
 
 
 
-        socket.on('end_call_decline', (data) => {
-            try {
-                const { callID } = data;
-                const decliningUserId = activeUsers[socket.id]?.userId;
+  socket.on('end_call_decline', (data) => {
+    try {
+        const { callID, roomId } = data;
+        const decliningUserId = activeUsers[socket.id]?.userId;
 
-                console.log('❌ Call declined by socket:', socket.id, 'decliningUserId:', decliningUserId, 'callID (user.id):', callID);
-
-                // Find all socket IDs for users with userId matching callID
-                const activeUserSockets = Object.keys(activeUsers).filter(socketId => {
-
-                    const user = activeUsers[socketId];
-                    console.log('🔍 Checking active user socket:', socketId, 'with userId:', user.userId);
-                    return user.userId == callID;
-                });
-
-                console.log('❌ Active sockets for call decline notification:', activeUserSockets);
-
-                // Emit call_declined to all relevant sockets
-                activeUserSockets.forEach(socketId => {
-
-                    console.log('❌ Notifying socket of call decline:', socketId, 'for callID (user.id):', callID);
-                    io.to(socketId).emit('call_declined', {
-                        callID,
-                        declinedBy: decliningUserId || socket.id, // Use userId if available, else socket.id
-                        timestamp: Date.now()
-                    });
-                });
-
-              
-            } catch (error) {
-                console.error('❌ Error in end_call_decline:', error);
-                socket.emit('call_error', {
-                    error: 'Failed to process call decline',
-                    details: error.message
-                });
-            }
+        console.log('❌ Call declined:', {
+            callID,
+            roomId,
+            decliningUserId,
+            timestamp: new Date().toISOString()
         });
+
+        // Find sockets for the user being declined
+        const targetSockets = Object.keys(activeUsers).filter(socketId => {
+            return activeUsers[socketId].userId == callID;
+        });
+
+        // Emit decline to target user sockets
+        targetSockets.forEach(socketId => {
+            io.to(socketId).emit('call_declined', {
+                callID,
+                roomId,
+                declinedBy: decliningUserId || socket.id,
+                timestamp: Date.now()
+            });
+        });
+
+        
+
+        // Clean up call if exists
+        if (roomId && activeCalls[roomId]) {
+            activeCalls[roomId].status = 'declined';
+            activeCalls[roomId].declinedBy = decliningUserId;
+            delete activeCalls[roomId];
+        }
+
+        // End any CallKit calls
+        if (callID) {
+            // This would be handled by your FCM/CallKit logic
+        }
+
+    } catch (error) {
+        console.error('❌ Error in end_call_decline:', error);
+    }
+});
 
         // Call status updates
         socket.on('call_status_update', async (data) => {
