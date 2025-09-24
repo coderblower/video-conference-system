@@ -172,7 +172,7 @@ function setupSocket(server) {
 
                     const user = activeUsers[socketId];
                     console.log('🔍 Checking active user socket:', socketId, 'with userId:', user.userId);
-                    return user.userId === callID;
+                    return user.userId == callID;
                 });
 
                 console.log('❌ Active sockets for call decline notification:', activeUserSockets);
