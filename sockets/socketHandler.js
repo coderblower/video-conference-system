@@ -169,7 +169,9 @@ function setupSocket(server) {
 
                 // Find all socket IDs for users with userId matching callID
                 const activeUserSockets = Object.keys(activeUsers).filter(socketId => {
+
                     const user = activeUsers[socketId];
+                    console.log('🔍 Checking active user socket:', socketId, 'with userId:', user.userId);
                     return user.userId === callID;
                 });
 
