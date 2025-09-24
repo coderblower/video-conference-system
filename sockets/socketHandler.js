@@ -173,6 +173,8 @@ function setupSocket(server) {
                     return user.userId === callID;
                 });
 
+                console.log('❌ Active sockets for call decline notification:', activeUserSockets);
+
                 // Emit call_declined to all relevant sockets
                 activeUserSockets.forEach(socketId => {
 
