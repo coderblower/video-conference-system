@@ -156,7 +156,7 @@ function setupSocket(server) {
 socket.on('end_call', (data) => {
 
     console.log('🔚 End call request received:', data);
-    
+
     try {
         const { roomId, from, to, endedBy, timestamp } = data;
         
@@ -553,34 +553,9 @@ socket.on('end_call', (data) => {
             });
         });
 
-        // Call rejection handling
-        socket.on('reject_all_caller', (data) => {
-            const { room } = data;
-            console.log('❌ Rejecting all calls in room:', room);
-            
-            const allSockets = Object.values(users).flat().map(user => user.socket_id);
-            allSockets.forEach(socketId => {
-                if (socketId !== socket.id) {
-                    io.to(socketId).emit('end_call', { 
-                        from: socket.id, 
-                        room 
-                    });
-                }
-            });
-        });
+ 
 
-        // End call request
-        socket.on('request_end_call', (data) => {
-            const { room, to } = data;
-            
-            if (!to) {
-                console.error("❌ No recipient specified for end_call");
-                return;
-            }
-            
-            console.log('📞 Ending call for:', to, 'in room:', room);
-            io.to(to).emit('end_call', { from: socket.id, room });
-        });
+
 
         // WebRTC signaling
         socket.on('message', (data) => {
