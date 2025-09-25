@@ -154,6 +154,9 @@ function setupSocket(server) {
 
         // Enhanced end call handler
 socket.on('end_call', (data) => {
+
+    console.log('🔚 End call request received:', data);
+    
     try {
         const { roomId, from, to, endedBy, timestamp } = data;
         
