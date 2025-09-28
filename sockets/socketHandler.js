@@ -480,13 +480,14 @@ socket.on('end_call', (data) => {
         // Legacy support - Enhanced FCM messaging
         socket.on('send_fcm_message', async (data) => {
             try {
-                const { callee, roomId, callerName, callerId } = data;
+                const { callee, roomId, callerName, callerId,  } = data;
                 
                 console.log('📞 FCM call request:', {
                     callee,
                     roomId,
                     callerName,
                     callerId,
+                    callType,
                     timestamp: new Date().toISOString()
                 });
 
@@ -496,9 +497,9 @@ socket.on('end_call', (data) => {
                 }
 
                 const finalCallerName = callerName || 'Unknown Caller';
-                
-                const result = await sendDataOnlyCallNotification(callee, roomId, finalCallerName, callerId);
-                
+
+                const result = await sendDataOnlyCallNotification(callee, roomId, finalCallerName, callerId, callType);
+
                 if (result.success) {
                     socket.emit('fcm_sent', {
                         success: true,
