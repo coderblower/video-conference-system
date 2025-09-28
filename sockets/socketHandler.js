@@ -480,7 +480,7 @@ socket.on('end_call', (data) => {
         // Legacy support - Enhanced FCM messaging
         socket.on('send_fcm_message', async (data) => {
             try {
-                const { callee, roomId, callerName, callerId,  } = data;
+                const { callee, roomId, callerName, callerId, callType } = data;
                 
                 console.log('📞 FCM call request:', {
                     callee,
