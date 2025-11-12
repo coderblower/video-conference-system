@@ -9,13 +9,20 @@ if (!admin.apps.length) {
   });
 }
 
+/**
+ * Send FCM notification optimized for iOS
+ * @param {string} token - FCM device token
+ * @param {string} title - Notification title
+ * @param {string} body - Notification body
+ * @param {object} data - Data payload
+ */
 async function sendFCM(token, title, body, data = {}) {
   if (!token) {
-    console.log("No token provided");
+    console.log("❌ No token provided");
     return;
   }
 
-  // 🔑 Make sure all data values are strings
+  // Stringify all data values
   const stringifiedData = {};
   Object.keys(data).forEach(key => {
     stringifiedData[key] = String(data[key]);
@@ -23,29 +30,36 @@ async function sendFCM(token, title, body, data = {}) {
 
   const message = {
     token,
+    // Android configuration
     android: {
       priority: "high",
-      // 🔥 CRITICAL: This ensures the message wakes up terminated apps
       data: {
         title,
         body,
         ...stringifiedData,
       }
     },
+    // iOS configuration - CRITICAL for iOS
     apns: {
       payload: {
         aps: {
-          contentAvailable: true,
+          alert: {
+            title,
+            body
+          },
           sound: 'default',
           badge: 1,
+          // CRITICAL: This makes the notification visible and actionable
+          'content-available': 1,
+          'mutable-content': 1,
         },
       },
       headers: {
-        "apns-priority": "10", // high priority for iOS
-        "apns-push-type": "background",
+        "apns-priority": "10", // High priority
+        "apns-push-type": "alert", // Alert type for iOS (not background)
       },
     },
-    // 🔥 IMPORTANT: Always include data payload for background handling
+    // Data payload - available in both foreground and background
     data: {
       title,
       body,
@@ -68,9 +82,17 @@ async function sendFCM(token, title, body, data = {}) {
  * @param {string} calleeId - Firestore user ID
  * @param {string} roomId - Call room ID
  * @param {string} callerName - Name of caller
+ * @param {string} callerId - Caller ID
+ * @param {string} callType - Call type (video/audio)
  */
-async function sendCallNotification(calleeId, roomId, callerName = "Unknown Caller") {
+async function sendCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId, callType = "video") {
   try {
+    console.log(`📞 ========== SENDING CALL NOTIFICATION ==========`);
+    console.log(`📞 Callee ID: ${calleeId}`);
+    console.log(`📞 Room ID: ${roomId}`);
+    console.log(`📞 Caller: ${callerName}`);
+    console.log(`📞 Call Type: ${callType}`);
+
     const userDocRef = admin.firestore().collection("users").doc(calleeId);
     const devicesSnapshot = await userDocRef.collection("devices").get();
 
@@ -79,18 +101,23 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
       return { success: false, message: "No devices found" };
     }
 
-    console.log(`📞 Sending call notification to ${devicesSnapshot.docs.length} devices`);
+    console.log(`📱 Found ${devicesSnapshot.docs.length} devices for user`);
 
-    // Loop through all device docs
     const sendPromises = devicesSnapshot.docs.map(async (deviceDoc) => {
-      const token = deviceDoc.data().fcmToken;
+      const deviceData = deviceDoc.data();
+      const token = deviceData.fcmToken;
+      const platform = deviceData.devicePlatform;
+      
       if (!token) {
         console.log("⚠️ No FCM token found for device:", deviceDoc.id);
         return null;
       }
 
-      console.log("📞 Sending call to room:", roomId);
+      console.log(`📤 Sending to device: ${deviceDoc.id} (${platform})`);
+      console.log(`📤 Token: ${token.substring(0, 20)}...`);
 
+      const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
       return await sendFCM(
         token, 
         "Incoming Call 📞", 
@@ -99,9 +126,9 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
           type: "CALL",
           callerName,
           roomId,
-          // 🔥 Add unique call ID for tracking
-          callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          // Add timestamp
+          callId,
+          callerId: callerId.toString(),
+          callType: callType,
           timestamp: Date.now().toString(),
         }
       );
@@ -109,11 +136,10 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
 
     const results = await Promise.allSettled(sendPromises.filter(Boolean));
     
-    // Log results
     const successful = results.filter(r => r.status === 'fulfilled').length;
     const failed = results.filter(r => r.status === 'rejected').length;
     
-    console.log(`📡 Call notification results: ${successful} successful, ${failed} failed`);
+    console.log(`✅ Call notification results: ${successful} successful, ${failed} failed`);
     
     if (failed > 0) {
       console.log("❌ Failed sends:", 
@@ -122,6 +148,8 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
           .map(r => r.reason)
       );
     }
+
+    console.log(`📞 ========== CALL NOTIFICATION COMPLETED ==========`);
 
     return { 
       success: successful > 0, 
@@ -136,9 +164,18 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
   }
 }
 
-// 🔥 NEW: Function to send high-priority data-only message for better terminated app handling
-async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId, callType) {
+/**
+ * Send data-only notification for silent/background processing
+ * @param {string} calleeId - Firestore user ID
+ * @param {string} roomId - Call room ID
+ * @param {string} callerName - Name of caller
+ * @param {string} callerId - Caller ID
+ * @param {string} callType - Call type (video/audio)
+ */
+async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId, callType = "video") {
   try {
+    console.log(`📞 Sending DATA-ONLY call notification`);
+    
     const userDocRef = admin.firestore().collection("users").doc(calleeId);
     const devicesSnapshot = await userDocRef.collection("devices").get();
 
@@ -151,7 +188,9 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
       const token = deviceDoc.data().fcmToken;
       if (!token) return null;
 
-      // 🔥 Data-only message - no notification payload
+      const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Data-only message - works better for terminated apps
       const message = {
         token,
         android: {
@@ -160,31 +199,28 @@ async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unkn
             type: "CALL",
             callerName,
             roomId,
-            callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            callId,
+            callerId: callerId.toString(),
+            callType,
             timestamp: Date.now().toString(),
             title: "Incoming Call",
             body: `${callerName} is calling you`,
-            calleeId,
-            callType: callType || "video",
-            callerId: callerId.toString(),
           }
         },
         data: {
           type: "CALL", 
           callerName,
           roomId,
-          callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now().toString(),
-          title: "Incoming Call",
-          body: `${callerName} is calling you`,
-          calleeId,
+          callId,
           callerId: callerId.toString(),
+          callType,
+          timestamp: Date.now().toString(),
         },
       };
 
       try {
         const response = await admin.messaging().send(message);
-        console.log("✅ Data-only FCM sent successfully:", response);
+        console.log("✅ Data-only FCM sent:", response);
         return response;
       } catch (error) {
         console.error("❌ Error sending data-only FCM:", error);
