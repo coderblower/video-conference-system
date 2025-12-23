@@ -1,229 +1,323 @@
 const {Server} = require('socket.io');
-const { sendCallNotification } = require('../helpers/fcmHelper');
+const { sendUnifiedCallNotification } = require('../helpers/voipHelper');
 
 function setupSocket(server) {
     const io = new Server(server, {
         cors: {
-          origin: "*", // Adjust to allow specific origins for security
-          methods: ["GET", "POST"]
+            origin: "*",
+            methods: ["GET", "POST"]
         }
-      });
+    });
 
-    // Store users in rooms
     const rooms = {};
-    const messages={};
+    const messages = {};
+    const activeUsers = {};
+    const activeCalls = {};
     let users = {};
 
-
-    
-    setInterval(() => {
-        // Emit online users every 10 seconds
-        console.log('Online users:', users);
-    }, 5000);
-    
-
     io.on('connection', (socket) => {
-        console.log('A user connected:', socket.id);
+        console.log('🔗 User connected:', socket.id);
+        activeUsers[socket.id] = {
+            connectedAt: new Date(),
+            lastActivity: new Date()
+        };
 
         socket.emit('connected', socket.id);
 
-
+        // User join
         socket.on('join_online', (userInfo) => {
-
-
             if (userInfo && userInfo.id) {
                 users[userInfo.id] = [...users[userInfo.id] || [], {
                     name: userInfo.firstName + ' ' + userInfo.lastName,
-                    socket_id: socket.id
+                    socket_id: socket.id,
+                    avatar: userInfo.avatar || null,
+                    status: 'online',
+                    lastSeen: new Date()
                 }];
-            
+
+                activeUsers[socket.id].userId = userInfo.id;
+                activeUsers[socket.id].userInfo = userInfo;
             }
 
-          
-
-            console.log( 'new User connected :', users);
-
+            console.log('👤 User joined:', userInfo.id, 'Socket:', socket.id);
             socket.emit('new-users', users);
-
             io.emit('online_user', users);
-            
-        });
-        
-        
-        
-        // Join a room
-        socket.on('join-room', (roomId) => {
-            
-            
-            socket.join(roomId);
-            
-            socket.emit('load-old_mesage', messages[roomId]);
-
-            // Add user to room
-            if (!rooms[roomId]) {
-                rooms[roomId] = [];
-                socket.emit('first_in_room');
-            }
-            rooms[roomId].push(socket.id);
-
-            console.log(`User ${socket.id} joined room ${roomId}`);
-
-            // Notify other users in the room
-            socket.to(roomId).emit('new-user', socket.id);
-
-            
         });
 
+        // Enhanced FCM/VoIP call initiation
+        socket.on('send_fcm_message', async (data) => {
+            try {
+                const { callee, roomId, callerName, callerId, callType } = data;
+                
+                console.log('📞 ========== CALL INITIATION ==========');
+                console.log('📞 Callee:', callee);
+                console.log('📞 Room:', roomId);
+                console.log('📞 Caller:', callerName);
+                console.log('📞 Type:', callType);
 
-        socket.on('make_call', (data) => {
+                if (!callee || !roomId) {
+                    socket.emit('fcm_error', { error: 'callee and roomId required' });
+                    return;
+                }
 
-            
-            const { room, to, id  } = data; 
+                // Store active call
+                activeCalls[roomId] = {
+                    callerId,
+                    calleeId: callee,
+                    callerName,
+                    callType: callType || 'video',
+                    status: 'calling',
+                    createdAt: new Date(),
+                    participants: [callerId]
+                };
 
-            console.log('Making call to:', to, 'in room:', room, 'id :', id);
-            // call to all users[id] array
-            const userSockets = users[id]?.map(user => user.socket_id) || [];
-            userSockets.forEach(socketId => {
-                io.to(socketId).emit('incoming_call', { from: socket.id, room });
-            });
+                // Send unified notification (VoIP for iOS, FCM for Android)
+                const result = await sendUnifiedCallNotification(
+                    callee,
+                    roomId,
+                    callerName || 'Unknown Caller',
+                    callerId,
+                    callType || 'video'
+                );
 
-
-        });
-
-        socket.on('send_fcm_message', (data) => {
-            const { to, title, body, roomId } = data;
-
-            // Find the user's device token
-            const user = Object.values(users).flat().find(user => user.socket_id === to);
-            if (user) {
-                sendCallNotification(user.id, title, body, { roomId });
-            }
-        });
-
-        // this is for ending all ring for all users except the one accepting the call
-
-
-
-        socket.on('reject_all_caller', (data) => {   
-            const { room, to } = data; 
-
-            //I want only ending call all user except socket.id user in users object
-            const userSockets = Object.values(users).flat().map(user => user.socket_id);
+                if (result.success) {
+                    console.log('✅ Call notification sent successfully');
                     
-            userSockets.forEach(socketId => {
-                io.to(socketId).emit('end_call', { from: socket.id, room });
-            });
+                    // Emit ringing status
+                    socket.emit('ringing_call', { roomId });
+                    socket.emit('fcm_sent', {
+                        success: true,
+                        callee,
+                        roomId,
+                        message: 'Call notification sent'
+                    });
 
-        });
+                    // Notify other user devices via socket
+                    const userSockets = users[callee]?.map(user => user.socket_id) || [];
+                    userSockets.forEach(socketId => {
+                        io.to(socketId).emit('incoming_call', { 
+                            from: socket.id, 
+                            room: roomId,
+                            callerName: callerName || 'Unknown Caller',
+                            callerId: callerId,
+                            callType: callType || 'video'
+                        });
+                    });
 
-        socket.on('request_end_call', (data) => {
-            const { room, to } = data; 
+                } else {
+                    console.error('❌ Failed to send call notification');
+                    socket.emit('fcm_error', {
+                        error: 'Failed to send notification',
+                        callee,
+                        roomId
+                    });
+                }
 
-            // Iant to emmit end_call to only data.to .
+                console.log('📞 ========== CALL INITIATION COMPLETED ==========');
 
-            if (!to) {
-                console.error("No recipient specified for end_call.");  
-                return;
-            }   
-            console.log('Ending call for:', to, 'in room:', room);
-
-            // Emit end_call to the specific user
-            io.to(to).emit('end_call', { from: socket.id, room });     
-           
-        }); 
-
-
-
-
-        socket.on('check_user', () => {      
-            socket.emit('get_user', users);
-        });
-
- 
-        socket.on("chat-message", (roomId, newMessage) => {
-            if(!messages[roomId]){
-                messages[roomId] = [];
+            } catch (error) {
+                console.error('❌ Error in send_fcm_message:', error);
+                socket.emit('fcm_error', {
+                    error: 'Internal server error',
+                    details: error.message
+                });
             }
-            messages[roomId].push(newMessage);
-            console.log(messages);
-            io.to(roomId).emit("chat-message", newMessage); // Broadcast message to all users in the room
-          });
+        });
 
-        // Handle signaling messages (offer/answer/ICE candidates)
+        // Call status updates
+        socket.on('call_status_update', (data) => {
+            const { roomId, status, userId } = data;
+            
+            console.log('📞 Call status update:', { roomId, status, userId });
+
+            if (activeCalls[roomId]) {
+                activeCalls[roomId].status = status;
+                
+                if (status === 'accepted') {
+                    activeCalls[roomId].participants.push(userId);
+                    activeCalls[roomId].connectedAt = new Date();
+                    
+                    // Notify caller
+                    const callerConnections = users[activeCalls[roomId].callerId]
+                        ?.map(user => user.socket_id) || [];
+                    callerConnections.forEach(socketId => {
+                        io.to(socketId).emit('call_accepted', {
+                            roomId,
+                            acceptedBy: userId
+                        });
+                    });
+                } else if (status === 'declined') {
+                    // Notify caller
+                    const callerConnections = users[activeCalls[roomId].callerId]
+                        ?.map(user => user.socket_id) || [];
+                    callerConnections.forEach(socketId => {
+                        io.to(socketId).emit('call_declined', {
+                            roomId,
+                            declinedBy: userId
+                        });
+                    });
+                    delete activeCalls[roomId];
+                }
+            }
+        });
+
+        // End call handler
+        socket.on('end_call', (data) => {
+            try {
+                const { roomId, from, to, endedBy, timestamp } = data;
+                
+                console.log('🔚 Call ended:', { roomId, from, to, endedBy });
+
+                if (activeCalls[roomId]) {
+                    activeCalls[roomId].status = 'ended';
+                    activeCalls[roomId].endedBy = endedBy;
+                    activeCalls[roomId].endedAt = new Date();
+                }
+
+                // Notify recipient
+                if (to) {
+                    const recipientSockets = Object.keys(activeUsers).filter(socketId => {
+                        return activeUsers[socketId].userId == to;
+                    });
+
+                    recipientSockets.forEach(socketId => {
+                        io.to(socketId).emit('call_ended', {
+                            roomId,
+                            from,
+                            endedBy,
+                            timestamp: timestamp || Date.now()
+                        });
+                    });
+                }
+
+                // Broadcast to room
+                socket.to(roomId).emit('call_ended', {
+                    roomId,
+                    endedBy,
+                    timestamp: timestamp || Date.now()
+                });
+
+                setTimeout(() => {
+                    delete activeCalls[roomId];
+                }, 5000);
+
+                socket.emit('call_end_confirmed', { success: true, roomId });
+
+            } catch (error) {
+                console.error('❌ Error in end_call:', error);
+                socket.emit('call_error', {
+                    error: 'Failed to end call',
+                    details: error.message
+                });
+            }
+        });
+
+        // Call decline handler
+        socket.on('end_call_decline', (data) => {
+            try {
+                const { callID, roomId } = data;
+                const decliningUserId = activeUsers[socket.id]?.userId;
+
+                console.log('❌ Call declined:', { callID, roomId, decliningUserId });
+
+                // Find target user sockets
+                const targetSockets = Object.keys(activeUsers).filter(socketId => {
+                    return activeUsers[socketId].userId == callID;
+                });
+
+                // Notify caller
+                targetSockets.forEach(socketId => {
+                    io.to(socketId).emit('call_declined', {
+                        callID,
+                        roomId,
+                        declinedBy: decliningUserId || socket.id,
+                        timestamp: Date.now()
+                    });
+                });
+
+                // Clean up call
+                if (roomId && activeCalls[roomId]) {
+                    delete activeCalls[roomId];
+                }
+
+            } catch (error) {
+                console.error('❌ Error in end_call_decline:', error);
+            }
+        });
+
+        // WebRTC signaling
         socket.on('message', (data) => {
-            const { roomId, to } = data;
-
-            console.log('Message received:', data);
-
+            const { roomId, to, type } = data;
+            
             if (to) {
-                // Forward message to a specific user
                 io.to(to).emit('message', { ...data, from: socket.id });
-            } else {
-                // Broadcast to all user s in the room except sender
+            } else if (roomId) {
                 socket.to(roomId).emit('message', { ...data, from: socket.id });
             }
         });
 
-        socket.on("leaveRoom", (roomId) => {
-            console.log(`User is leaving room: ${roomId}`);
+        // Room management
+        socket.on('join-room', (roomId) => {
+            socket.join(roomId);
             
-            // Perform cleanup tasks (e.g., notify other users, remove from room, etc.)
+            if (!rooms[roomId]) {
+                rooms[roomId] = [];
+                socket.emit('first_in_room');
+            }
             
-        
-            // Optional: Notify other users in the room
-            socket.to(roomId).emit('user-left', socket.id);
-            socket.leave(roomId);
+            rooms[roomId].push(socket.id);
+            console.log(`👥 User ${socket.id} joined room ${roomId}`);
+            
+            socket.emit('load-old-messages', messages[roomId] || []);
+            socket.to(roomId).emit('new-user', socket.id);
         });
 
-        // Handle disconnection
+        // Disconnect handler
         socket.on('disconnect', () => {
-
-            console.log('A user disconnected:', socket.id );
-
-
-            //remove users from array in users object
-
+            console.log('🔌 User disconnected:', socket.id);
             
-
+            const userId = activeUsers[socket.id]?.userId;
+            delete activeUsers[socket.id];
             
-             users = Object.keys(users).reduce((acc, userId) => {
-                acc[userId] = users[userId].filter(user => user.socket_id !== socket.id);
-                if( acc[userId].length === 0) {
-                    delete acc[userId]; // Remove userId if no sockets left 
+            if (userId) {
+                users = Object.keys(users).reduce((acc, uid) => {
+                    acc[uid] = users[uid].filter(user => user.socket_id !== socket.id);
+                    if (acc[uid].length > 0) {
+                        return acc;
+                    }
+                    return acc;
+                }, {});
+            }
+
+            // Clean up active calls
+            Object.keys(activeCalls).forEach(roomId => {
+                const call = activeCalls[roomId];
+                if (call.participants.includes(userId)) {
+                    call.participants = call.participants.filter(id => id !== userId);
+                    
+                    if (call.participants.length === 0) {
+                        delete activeCalls[roomId];
+                    } else {
+                        io.to(roomId).emit('participant_disconnected', {
+                            userId,
+                            timestamp: Date.now()
+                        });
+                    }
                 }
-                if (Object.keys(acc).length === 0) {    
-                    acc = {}; // Reset users if empty
-                }
-                console.log('Updated users:', acc);
-                return acc;
-            }, {});
+            });
 
-            
-            // Remove user from the users object
-            // for (const userId in users) {
-            //     if (users[userId].socket_id === socket.id) {
-            //         delete users[userId];
-            //         break;
-            //     }
-            // }
-
-            // Remove user from all rooms they joined
+            // Clean up rooms
             for (const roomId in rooms) {
-                rooms[roomId] = rooms[roomId].filter((id) => id !== socket.id);
-
-                // Notify other users in the room
+                rooms[roomId] = rooms[roomId].filter(id => id !== socket.id);
                 socket.to(roomId).emit('user-left', socket.id);
-
-                // Clean up empty rooms
+                
                 if (rooms[roomId].length === 0) {
                     delete rooms[roomId];
                 }
             }
-
-            // Optionally, notify everyone of the updated online users
-            // io.emit('online_user', users);
+            
+            io.emit('online_user', users);
         });
-
     });
 
     return io;
