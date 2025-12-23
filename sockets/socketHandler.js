@@ -1,5 +1,5 @@
 const {Server} = require('socket.io');
-const { sendUnifiedCallNotification } = require('../helpers/voipHelper');
+const { sendUnifiedCallNotification } = require('../helpers/fcmHelper');
 
 function setupSocket(server) {
     const io = new Server(server, {
