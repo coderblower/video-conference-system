@@ -9,33 +9,61 @@ if (!admin.apps.length) {
   });
 }
 
+// Track which services are available
+const firebaseServices = {
+  firestore: false,
+  auth: false,
+  messaging: false
+};
+
 /**
  * Test Firebase connection
  */
 async function testFirebaseConnection() {
+  console.log('   🔍 Testing Firebase services...\n');
+  
   try {
     // Test Firestore connection
-    await admin.firestore().collection("_test").doc("connection").set({
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      status: "connected"
-    });
-    console.log("   ✅ Firestore connected");
-
-    // Test Authentication connection
-    await admin.auth().listUsers(1);
-    console.log("   ✅ Firebase Auth connected");
-
-    // Test FCM
-    if (admin.messaging()) {
-      console.log("   ✅ Firebase Messaging (FCM) ready");
+    try {
+      await admin.firestore().collection("_test").doc("connection").set({
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        status: "connected"
+      });
+      await admin.firestore().collection("_test").doc("connection").delete();
+      firebaseServices.firestore = true;
+      console.log("   ✅ Firestore: Connected");
+    } catch (firestoreError) {
+      console.log("   ❌ Firestore: Failed -", firestoreError.message);
     }
 
-    // Clean up test document
-    await admin.firestore().collection("_test").doc("connection").delete();
+    // Test Authentication connection
+    try {
+      const listUsersResult = await admin.auth().listUsers(1);
+      firebaseServices.auth = true;
+      console.log("   ✅ Auth: Connected");
+    } catch (authError) {
+      console.log("   ⚠️  Auth: Not configured (optional)");
+      console.log("      Enable it in Firebase Console > Authentication");
+    }
+
+    // Test FCM
+    try {
+      const messaging = admin.messaging();
+      if (messaging) {
+        firebaseServices.messaging = true;
+        console.log("   ✅ Messaging (FCM): Ready");
+      }
+    } catch (fcmError) {
+      console.log("   ⚠️  Messaging: Not available (optional)");
+    }
+
+    console.log();
     
-    return true;
+    // At minimum, we need Firestore to work
+    return firebaseServices.firestore;
+    
   } catch (error) {
-    console.error("   ❌ Connection failed:", error.message);
+    console.error("   ❌ Firebase connection failed:", error.message);
     return false;
   }
 }
@@ -44,6 +72,11 @@ async function testFirebaseConnection() {
  * Delete all documents in a collection
  */
 async function clearCollection(collectionPath) {
+  if (!firebaseServices.firestore) {
+    console.log(`   ⚠️  Cannot clear '${collectionPath}' - Firestore not available`);
+    return 0;
+  }
+
   try {
     const collectionRef = admin.firestore().collection(collectionPath);
     const snapshot = await collectionRef.get();
@@ -86,14 +119,12 @@ async function clearCollection(collectionPath) {
  * Clear specific collections on startup
  */
 async function clearFirebaseData() {
-  console.log('\n   🧹 Clearing Firebase data...');
+  console.log('   🧹 Clearing Firebase data...\n');
   
-  // Configure which collections to clear
   const collectionsTosClear = [
-    "calls",           // Clear call history
-    "notifications",   // Clear old notifications
-    "rooms",          // Clear room data
-    // "users",        // ⚠️ DANGEROUS - Uncomment only if you want to delete all users
+    "calls",
+    "notifications",
+    "rooms",
   ];
 
   let totalCleared = 0;
@@ -102,7 +133,7 @@ async function clearFirebaseData() {
     totalCleared += cleared;
   }
 
-  console.log(`   ✨ Total cleared: ${totalCleared} documents\n`);
+  console.log(`\n   ✨ Total cleared: ${totalCleared} documents\n`);
 }
 
 /**
@@ -113,30 +144,41 @@ async function initializeFirebase() {
     const isConnected = await testFirebaseConnection();
     
     if (!isConnected) {
+      console.log('   ❌ Critical: Firestore is required but not available\n');
       return false;
     }
 
-    // Clear data based on environment or command line flag
     const shouldClear = process.env.CLEAR_FIREBASE === 'true' || 
                        process.argv.includes('--clear-firebase');
     
     if (shouldClear) {
       await clearFirebaseData();
     } else {
-      console.log('   ℹ️  Skipping data clear (use --clear-firebase flag or CLEAR_FIREBASE=true)\n');
+      console.log('   ℹ️  Data clearing disabled');
+      console.log('      Use --clear-firebase flag to enable\n');
     }
     
+    console.log('   ✅ Firebase initialized successfully\n');
     return true;
+    
   } catch (error) {
     console.error('   ❌ Firebase initialization failed:', error.message);
     return false;
   }
 }
 
+/**
+ * Send FCM notification
+ */
 async function sendFCM(token, title, body, data = {}) {
+  if (!firebaseServices.messaging) {
+    console.log("⚠️  FCM not available - notification not sent");
+    return null;
+  }
+
   if (!token) {
     console.log("No token provided");
-    return;
+    return null;
   }
 
   const payload = {
@@ -146,25 +188,35 @@ async function sendFCM(token, title, body, data = {}) {
 
   try {
     const response = await admin.messaging().sendToDevice(token, payload);
-    console.log("FCM sent successfully:", response);
+    console.log("✅ FCM sent successfully");
     return response;
   } catch (error) {
-    console.error("Error sending FCM:", error);
-    throw error;
+    console.error("❌ Error sending FCM:", error.message);
+    return null;
   }
 }
 
+/**
+ * Send call notification
+ */
 async function sendCallNotification(calleeId, callerName, roomId) {
+  if (!firebaseServices.firestore) {
+    console.log("⚠️  Firestore not available - cannot send notification");
+    return;
+  }
+
   try {
     const userDoc = await admin.firestore().collection("users").doc(calleeId).get();
+    
     if (!userDoc.exists) {
-      console.log("User not found:", calleeId);
+      console.log("❌ User not found:", calleeId);
       return;
     }
 
     const token = userDoc.data().deviceToken;
+    
     if (!token) {
-      console.log("No device token for user:", calleeId);
+      console.log("⚠️  No device token for user:", calleeId);
       return;
     }
 
@@ -175,11 +227,17 @@ async function sendCallNotification(calleeId, callerName, roomId) {
     });
 
   } catch (err) {
-    console.error("Error sending call notification:", err);
+    console.error("❌ Error sending call notification:", err.message);
   }
 }
 
-// Export admin for use in other files
+/**
+ * Get Firebase services status
+ */
+function getServicesStatus() {
+  return firebaseServices;
+}
+
 module.exports = { 
   admin,
   sendFCM, 
@@ -187,5 +245,6 @@ module.exports = {
   initializeFirebase,
   testFirebaseConnection,
   clearFirebaseData,
-  clearCollection
+  clearCollection,
+  getServicesStatus
 };
