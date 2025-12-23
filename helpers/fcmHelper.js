@@ -188,19 +188,7 @@ async function sendFCM(token, title, body, data = {}) {
   }
 }
 
-<<<<<<< HEAD
 async function sendCallNotification(calleeId, callerName, roomId) {
-=======
-/**
- * Send a call notification by callee userId
- * @param {string} calleeId - Firestore user ID
- * @param {string} roomId - Call room ID
- * @param {string} callerName - Name of caller
- * @param {string} callerId - Caller ID
- * @param {string} callType - Call type (video/audio)
- */
-async function sendCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId, callType = "video") {
->>>>>>> 7f4981cced43b6261490cccf94e9df4b9063deb4
   try {
     console.log(`📞 ========== SENDING CALL NOTIFICATION ==========`);
     console.log(`📞 Callee ID: ${calleeId}`);
@@ -279,7 +267,6 @@ async function sendCallNotification(calleeId, roomId, callerName = "Unknown Call
   }
 }
 
-<<<<<<< HEAD
 module.exports = { 
   sendFCM, 
   sendCallNotification, 
@@ -287,89 +274,4 @@ module.exports = {
   testFirebaseConnection,
   clearFirebaseData,
   clearCollection
-=======
-/**
- * Send data-only notification for silent/background processing
- * @param {string} calleeId - Firestore user ID
- * @param {string} roomId - Call room ID
- * @param {string} callerName - Name of caller
- * @param {string} callerId - Caller ID
- * @param {string} callType - Call type (video/audio)
- */
-async function sendDataOnlyCallNotification(calleeId, roomId, callerName = "Unknown Caller", callerId, callType = "video") {
-  try {
-    console.log(`📞 Sending DATA-ONLY call notification`);
-    
-    const userDocRef = admin.firestore().collection("users").doc(calleeId);
-    const devicesSnapshot = await userDocRef.collection("devices").get();
-
-    if (devicesSnapshot.empty) {
-      console.log("⚠️ No devices found for user:", calleeId);
-      return { success: false, message: "No devices found" };
-    }
-
-    const sendPromises = devicesSnapshot.docs.map(async (deviceDoc) => {
-      const token = deviceDoc.data().fcmToken;
-      if (!token) return null;
-
-      const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Data-only message - works better for terminated apps
-      const message = {
-        token,
-        android: {
-          priority: "high",
-          data: {
-            type: "CALL",
-            callerName,
-            roomId,
-            callId,
-            callerId: callerId.toString(),
-            callType,
-            timestamp: Date.now().toString(),
-            title: "Incoming Call",
-            body: `${callerName} is calling you`,
-          }
-        },
-        data: {
-          type: "CALL", 
-          callerName,
-          roomId,
-          callId,
-          callerId: callerId.toString(),
-          callType,
-          timestamp: Date.now().toString(),
-        },
-      };
-
-      try {
-        const response = await admin.messaging().send(message);
-        console.log("✅ Data-only FCM sent:", response);
-        return response;
-      } catch (error) {
-        console.error("❌ Error sending data-only FCM:", error);
-        throw error;
-      }
-    });
-
-    const results = await Promise.allSettled(sendPromises.filter(Boolean));
-    const successful = results.filter(r => r.status === 'fulfilled').length;
-    
-    return { 
-      success: successful > 0, 
-      successful,
-      message: `Data-only notification sent to ${successful} devices` 
-    };
-
-  } catch (err) {
-    console.error("❌ Error sending data-only call notification:", err);
-    throw err;
-  }
-}
-
-module.exports = { 
-  sendFCM, 
-  sendCallNotification, 
-  sendDataOnlyCallNotification 
->>>>>>> 7f4981cced43b6261490cccf94e9df4b9063deb4
 };
