@@ -5,7 +5,7 @@ const passport = require('passport');
 const session = require('express-session');
 const { dbConnect } = require('./config/db');
 const { setupSocket } = require('./sockets/socketHandler');
-const { initializeVoIPProvider } = require('./helpers/voipHelper');
+
 const cors = require('cors');
 
 const app = express();
