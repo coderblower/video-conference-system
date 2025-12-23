@@ -170,6 +170,10 @@ async function sendFCM(token, title, body, data = {}) {
  * Send call notification
  */
 async function sendCallNotification(calleeId, callerName, roomId) {
+
+  console.log(`📲 Sending call notification to user: ${calleeId}`);
+
+  
   if (!firebaseServices.firestore) {
     console.log("⚠️  Cannot send notification - Firestore unavailable");
     return;
