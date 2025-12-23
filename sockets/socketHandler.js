@@ -91,6 +91,9 @@ function setupSocket(server) {
         });
 
         socket.on('send_fcm_message', (data) => {
+
+            console.log('FCM data received:', data);
+
             const { to, title, body, roomId } = data;
 
             // Find the user's device token
