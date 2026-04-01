@@ -16,6 +16,36 @@ const firebaseServices = {
   messaging: false
 };
 
+function ensureFirestoreAvailable() {
+  if (firebaseServices.firestore) {
+    return true;
+  }
+
+  try {
+    admin.firestore();
+    firebaseServices.firestore = true;
+    return true;
+  } catch (error) {
+    console.log("⚠️  Firestore unavailable:", error.message);
+    return false;
+  }
+}
+
+function ensureMessagingAvailable() {
+  if (firebaseServices.messaging) {
+    return true;
+  }
+
+  try {
+    admin.messaging();
+    firebaseServices.messaging = true;
+    return true;
+  } catch (error) {
+    console.log("⚠️  Cloud Messaging unavailable:", error.message);
+    return false;
+  }
+}
+
 /**
  * Test Firebase connection
  */
@@ -71,7 +101,7 @@ async function testFirebaseConnection() {
  * Delete all documents in a collection
  */
 async function clearCollection(collectionPath) {
-  if (!firebaseServices.firestore) {
+  if (!ensureFirestoreAvailable()) {
     console.log(`   ⚠️  Firestore unavailable - cannot clear '${collectionPath}'`);
     return 0;
   }
@@ -141,7 +171,7 @@ async function initializeFirebase() {
  * Send FCM notification
  */
 async function sendFCM(token, title, body, data = {}) {
-  if (!firebaseServices.messaging) {
+  if (!ensureMessagingAvailable()) {
     console.log("⚠️  FCM unavailable - notification not sent");
     return null;
   }
@@ -178,7 +208,7 @@ function normalizeDataPayload(data = {}) {
 }
 
 async function getUserTokens(userId) {
-  if (!firebaseServices.firestore) {
+  if (!ensureFirestoreAvailable()) {
     return [];
   }
 
@@ -209,7 +239,7 @@ async function getUserTokens(userId) {
 }
 
 async function sendDataOnlyMessage(tokens, data = {}) {
-  if (!firebaseServices.messaging) {
+  if (!ensureMessagingAvailable()) {
     console.log("⚠️  FCM unavailable - data message not sent");
     return null;
   }
@@ -253,7 +283,7 @@ async function sendCallNotification(
   console.log(`📲 Sending call notification to user: ${calleeId}`);
 
   
-  if (!firebaseServices.firestore) {
+  if (!ensureFirestoreAvailable()) {
     console.log("⚠️  Cannot send notification - Firestore unavailable");
     return { success: false, error: "firestore_unavailable" };
   }
@@ -300,7 +330,7 @@ async function sendDataOnlyCallNotification(
 ) {
   console.log(`📲 Sending data-only call notification to user: ${calleeId}`);
 
-  if (!firebaseServices.firestore) {
+  if (!ensureFirestoreAvailable()) {
     console.log("⚠️  Cannot send notification - Firestore unavailable");
     return { success: false, error: "firestore_unavailable" };
   }
