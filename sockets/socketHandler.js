@@ -1,5 +1,5 @@
 const {Server} = require('socket.io');
-const { sendCallNotification, sendDataOnlyCallNotification } = require('../helpers/fcmHelper');
+const { admin, sendCallNotification, sendDataOnlyCallNotification } = require('../helpers/fcmHelper');
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -56,7 +56,7 @@ function setupSocket(server) {
         }
 
         users[normalizedUserId] = [
-            ...(users[normalizedUserId] || []).filter((user) => user.socket_id !== socket.id),
+            ...(users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id),
             {
                 name: `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim(),
                 socket_id: socket.id,
@@ -124,6 +124,43 @@ function setupSocket(server) {
         };
 
         return activeCalls[roomId];
+    };
+
+    const buildReachablePresence = (userId, userInfo = {}, existingEntry = null) => {
+        const fallbackName = existingEntry?.name || `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
+        return {
+            name: fallbackName,
+            socket_id: null,
+            avatar: existingEntry?.avatar || userInfo.avatar || userInfo.profilePic || null,
+            status: 'online',
+            lastSeen: new Date()
+        };
+    };
+
+    const hasRegisteredCallDevice = async (userId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId) {
+            return false;
+        }
+
+        try {
+            const userRef = admin.firestore().collection("users").doc(normalizedUserId);
+            const userSnapshot = await userRef.get();
+
+            if (!userSnapshot.exists) {
+                return false;
+            }
+
+            if (userSnapshot.data()?.deviceToken) {
+                return true;
+            }
+
+            const devicesSnapshot = await userRef.collection("devices").limit(1).get();
+            return !devicesSnapshot.empty;
+        } catch (error) {
+            console.error('⚠️  Failed checking registered call device:', error.message);
+            return false;
+        }
     };
 
     setInterval(() => {
@@ -774,9 +811,10 @@ socket.on('end_call', (data) => {
         });
 
         // Handle disconnection
-        socket.on('disconnect', () => {
+        socket.on('disconnect', async () => {
             console.log('🔌 User disconnected:', socket.id);
             
+            const disconnectedUser = activeUsers[socket.id];
             const userId = removeSocketPresence(socket.id);
             
             // Clean up active calls
@@ -801,6 +839,21 @@ socket.on('end_call', (data) => {
                     }
                 }
             });
+
+            const normalizedUserId = normalizeUserId(userId);
+            if (normalizedUserId && getUserSockets(normalizedUserId).length === 0) {
+                const canReceiveTerminatedCalls = await hasRegisteredCallDevice(normalizedUserId);
+                if (canReceiveTerminatedCalls) {
+                    const previousReachableEntry = (users[normalizedUserId] || []).find((user) => !user.socket_id) || null;
+                    users[normalizedUserId] = [
+                        buildReachablePresence(
+                            normalizedUserId,
+                            disconnectedUser?.userInfo || {},
+                            previousReachableEntry
+                        )
+                    ];
+                }
+            }
             
             // Remove from rooms
             for (const roomId in rooms) {
