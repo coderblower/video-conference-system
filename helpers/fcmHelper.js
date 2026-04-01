@@ -176,19 +176,22 @@ async function sendFCM(token, title, body, data = {}) {
     return null;
   }
 
-  if (!token) {
+  const tokens = Array.isArray(token) ? token.filter(Boolean) : [token].filter(Boolean);
+
+  if (tokens.length === 0) {
     console.log("⚠️  No FCM token provided");
     return null;
   }
 
   const payload = {
+    tokens,
     notification: { title, body },
-    data,
+    data: normalizeDataPayload(data),
   };
 
   try {
-    const response = await admin.messaging().sendToDevice(token, payload);
-    console.log("✅ FCM sent successfully");
+    const response = await admin.messaging().sendEachForMulticast(payload);
+    console.log(`✅ FCM sent successfully to ${response.successCount}/${tokens.length} device(s)`);
     return response;
   } catch (error) {
     console.error("❌ FCM error:", error.message);
@@ -250,16 +253,26 @@ async function sendDataOnlyMessage(tokens, data = {}) {
   }
 
   const payload = {
+    tokens,
     data: normalizeDataPayload(data),
-  };
-
-  const options = {
-    priority: "high",
-    contentAvailable: true,
+    android: {
+      priority: "high",
+    },
+    apns: {
+      payload: {
+        aps: {
+          contentAvailable: true,
+        },
+      },
+      headers: {
+        "apns-priority": "10",
+        "apns-push-type": "background",
+      },
+    },
   };
 
   try {
-    const response = await admin.messaging().sendToDevice(tokens, payload, options);
+    const response = await admin.messaging().sendEachForMulticast(payload);
     console.log(`✅ Data-only FCM sent to ${tokens.length} device(s)`);
     return response;
   } catch (error) {
