@@ -1,5 +1,9 @@
 const {Server} = require('socket.io');
 const { admin, sendCallNotification, sendDataOnlyCallNotification } = require('../helpers/fcmHelper');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const PRESENCE_GRACE_PERIOD_MS = 3000;
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -15,6 +19,8 @@ function setupSocket(server) {
     const activeUsers = {};
     const activeCalls = {};
     let users = {};
+    const connectedSocketsByUserId = new Map();
+    const disconnectGraceTimers = new Map();
 
     // Connection quality monitoring
     const connectionStats = {};
@@ -31,15 +37,114 @@ function setupSocket(server) {
         target.emit('online_user', users);
     };
 
+    const normalizeToken = (token) => {
+        if (!token || typeof token !== 'string') {
+            return null;
+        }
+
+        return token.startsWith('Bearer ') ? token.slice(7) : token;
+    };
+
+    const verifySocketToken = async (token) => {
+        const normalizedToken = normalizeToken(token);
+        if (!normalizedToken) {
+            throw new Error('missing_socket_token');
+        }
+
+        try {
+            return jwt.verify(normalizedToken, JWT_SECRET);
+        } catch (jwtError) {
+            try {
+                return await admin.auth().verifyIdToken(normalizedToken);
+            } catch (firebaseError) {
+                throw jwtError;
+            }
+        }
+    };
+
+    const extractAuthenticatedUserId = (decodedToken = {}) => {
+        return normalizeUserId(
+            decodedToken.userId ||
+            decodedToken.id ||
+            decodedToken.uid ||
+            decodedToken.sub
+        );
+    };
+
+    const cancelDisconnectGracePeriod = (userId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId) {
+            return;
+        }
+
+        const timer = disconnectGraceTimers.get(normalizedUserId);
+        if (timer) {
+            clearTimeout(timer);
+            disconnectGraceTimers.delete(normalizedUserId);
+        }
+    };
+
+    const upsertConnectedSocket = (userId, socketId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId || !socketId) {
+            return;
+        }
+
+        const existingSockets = connectedSocketsByUserId.get(normalizedUserId) || new Set();
+        existingSockets.add(socketId);
+        connectedSocketsByUserId.set(normalizedUserId, existingSockets);
+    };
+
+    const removeConnectedSocket = (userId, socketId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId || !socketId) {
+            return;
+        }
+
+        const existingSockets = connectedSocketsByUserId.get(normalizedUserId);
+        if (!existingSockets) {
+            return;
+        }
+
+        existingSockets.delete(socketId);
+        if (existingSockets.size === 0) {
+            connectedSocketsByUserId.delete(normalizedUserId);
+            return;
+        }
+
+        connectedSocketsByUserId.set(normalizedUserId, existingSockets);
+    };
+
+    const emitUserOnline = (userId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId || !users[normalizedUserId]) {
+            return;
+        }
+
+        io.emit('user-online', {
+            userId: normalizedUserId,
+            presence: users[normalizedUserId]
+        });
+    };
+
+    const emitUserOffline = (userId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId) {
+            return;
+        }
+
+        io.emit('user-offline', {
+            userId: normalizedUserId
+        });
+    };
+
     const getUserSockets = (userId, fallbackSocketId = null) => {
         const normalizedUserId = normalizeUserId(userId);
         const sockets = new Set();
 
-        if (normalizedUserId && Array.isArray(users[normalizedUserId])) {
-            users[normalizedUserId]
-                .map((user) => user.socket_id)
-                .filter(Boolean)
-                .forEach((socketId) => sockets.add(socketId));
+        if (normalizedUserId) {
+            const connectedSockets = connectedSocketsByUserId.get(normalizedUserId);
+            connectedSockets?.forEach((socketId) => sockets.add(socketId));
         }
 
         if (fallbackSocketId) {
@@ -50,18 +155,40 @@ function setupSocket(server) {
     };
 
     const registerUserPresence = (socket, userInfo = {}) => {
-        const normalizedUserId = normalizeUserId(userInfo.id);
+        const authenticatedUserId =
+            normalizeUserId(socket.data?.userId) || normalizeUserId(userInfo.id);
+        const normalizedUserId = authenticatedUserId;
         if (!normalizedUserId) {
             return null;
         }
 
+        cancelDisconnectGracePeriod(normalizedUserId);
+        upsertConnectedSocket(normalizedUserId, socket.id);
+
+        const existingEntry =
+            Array.isArray(users[normalizedUserId]) && users[normalizedUserId].length > 0
+                ? users[normalizedUserId][0]
+                : null;
+        const mergedUserInfo = {
+            ...(activeUsers[socket.id]?.userInfo || {}),
+            ...userInfo,
+            id: normalizedUserId
+        };
+
         users[normalizedUserId] = [
-            ...(users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id),
             {
-                name: `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim(),
+                name:
+                    `${mergedUserInfo.firstName || ''} ${mergedUserInfo.lastName || ''}`.trim() ||
+                    existingEntry?.name ||
+                    `User ${normalizedUserId}`,
                 socket_id: socket.id,
-                avatar: userInfo.avatar || null,
-                status: 'online',
+                avatar:
+                    existingEntry?.avatar ||
+                    mergedUserInfo.avatar ||
+                    mergedUserInfo.profilePic ||
+                    null,
+                status: 'available',
+                connected: true,
                 lastSeen: new Date()
             }
         ];
@@ -71,30 +198,22 @@ function setupSocket(server) {
             connectedAt: activeUsers[socket.id]?.connectedAt || new Date(),
             lastActivity: new Date(),
             userId: normalizedUserId,
-            userInfo
+            userInfo: mergedUserInfo
         };
 
         return normalizedUserId;
     };
 
     const removeSocketPresence = (socketId) => {
-        const normalizedUserId = normalizeUserId(activeUsers[socketId]?.userId);
+        const disconnectedUser = activeUsers[socketId];
+        const normalizedUserId = normalizeUserId(disconnectedUser?.userId);
         delete activeUsers[socketId];
+        removeConnectedSocket(normalizedUserId, socketId);
 
-        if (!normalizedUserId || !users[normalizedUserId]) {
-            return normalizedUserId;
-        }
-
-        const remainingConnections = users[normalizedUserId]
-            .filter((user) => user.socket_id !== socketId);
-
-        if (remainingConnections.length > 0) {
-            users[normalizedUserId] = remainingConnections;
-        } else {
-            delete users[normalizedUserId];
-        }
-
-        return normalizedUserId;
+        return {
+            userId: normalizedUserId,
+            userInfo: disconnectedUser?.userInfo || {}
+        };
     };
 
     const cacheCallState = (socket, data = {}) => {
@@ -132,65 +251,114 @@ function setupSocket(server) {
             name: fallbackName,
             socket_id: null,
             avatar: existingEntry?.avatar || userInfo.avatar || userInfo.profilePic || null,
-            status: 'online',
+            status: 'available',
+            connected: false,
             lastSeen: new Date()
         };
     };
 
-    const hasRegisteredCallDevice = async (userId) => {
+    const schedulePresenceDisconnect = (userId, userInfo = {}) => {
         const normalizedUserId = normalizeUserId(userId);
         if (!normalizedUserId) {
-            return false;
+            return;
         }
 
-        try {
-            const userRef = admin.firestore().collection("users").doc(normalizedUserId);
-            const userSnapshot = await userRef.get();
+        cancelDisconnectGracePeriod(normalizedUserId);
+        disconnectGraceTimers.set(
+            normalizedUserId,
+            setTimeout(() => {
+                disconnectGraceTimers.delete(normalizedUserId);
 
-            if (!userSnapshot.exists) {
-                return false;
-            }
+                if (getUserSockets(normalizedUserId).length > 0) {
+                    return;
+                }
 
-            if (userSnapshot.data()?.deviceToken) {
-                return true;
-            }
+                const previousReachableEntry =
+                    Array.isArray(users[normalizedUserId]) && users[normalizedUserId].length > 0
+                        ? users[normalizedUserId][0]
+                        : null;
 
-            const devicesSnapshot = await userRef.collection("devices").limit(1).get();
-            return !devicesSnapshot.empty;
-        } catch (error) {
-            console.error('⚠️  Failed checking registered call device:', error.message);
-            return false;
+                users[normalizedUserId] = [
+                    buildReachablePresence(
+                        normalizedUserId,
+                        userInfo,
+                        previousReachableEntry
+                    )
+                ];
+
+                emitPresence();
+            }, PRESENCE_GRACE_PERIOD_MS)
+        );
+    };
+
+    const clearUserPresence = (userId) => {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId) {
+            return;
         }
+
+        cancelDisconnectGracePeriod(normalizedUserId);
+        connectedSocketsByUserId.delete(normalizedUserId);
+        delete users[normalizedUserId];
+        emitUserOffline(normalizedUserId);
+        emitPresence();
     };
 
     setInterval(() => {
         console.log('📊 Server Stats:', {
             activeUsers: Object.keys(activeUsers).length,
             activeCalls: Object.keys(activeCalls).length,
-            rooms: Object.keys(rooms).length
+            rooms: Object.keys(rooms).length,
+            authenticatedUsers: connectedSocketsByUserId.size
         });
         console.log('🕒 Active Users:', activeUsers);
         console.log('🕒 All Users:', users);
     }, 30000);
 
+    io.use(async (socket, next) => {
+        try {
+            const token =
+                socket.handshake.auth?.token ||
+                socket.handshake.headers?.authorization;
+            const decodedToken = await verifySocketToken(token);
+            const authenticatedUserId = extractAuthenticatedUserId(decodedToken);
+
+            if (!authenticatedUserId) {
+                return next(new Error('socket_user_id_missing'));
+            }
+
+            socket.data = {
+                ...(socket.data || {}),
+                auth: decodedToken,
+                userId: authenticatedUserId
+            };
+            next();
+        } catch (error) {
+            console.error('❌ Socket authentication failed:', error.message);
+            next(new Error('socket_auth_failed'));
+        }
+    });
+
     io.on('connection', (socket) => {
-        console.log('🔗 User connected:', socket.id);
+        console.log('🔗 User connected:', socket.id, 'User:', socket.data?.userId);
         activeUsers[socket.id] = {
             connectedAt: new Date(),
-            lastActivity: new Date()
+            lastActivity: new Date(),
+            userId: socket.data?.userId
         };
 
         socket.emit('connected', socket.id);
-    
 
         // Enhanced user join with presence
-        socket.on('join_online', (userInfo) => {
-            if (userInfo && userInfo.id) {
-                registerUserPresence(socket, userInfo);
+        socket.on('join_online', (userInfo = {}) => {
+            const normalizedUserId = registerUserPresence(socket, userInfo);
+            if (!normalizedUserId) {
+                socket.emit('presence_error', { error: 'user_id_missing' });
+                return;
             }
 
-            console.log('👤 User joined:', userInfo.id, 'Socket:', socket.id);
-            
+            console.log('👤 User joined:', normalizedUserId, 'Socket:', socket.id);
+            emitUserOnline(normalizedUserId);
             socket.emit('new-users', users);
             emitPresence();
         });
@@ -802,6 +970,21 @@ socket.on('end_call', (data) => {
             socket.emit('get_user', users);
         });
 
+        socket.on('user_sign_out', (data = {}) => {
+            const explicitUserId =
+                normalizeUserId(data.userId) || normalizeUserId(socket.data?.userId);
+            if (!explicitUserId) {
+                return;
+            }
+
+            console.log('🚪 Explicit socket sign-out:', explicitUserId);
+            socket.data = {
+                ...(socket.data || {}),
+                explicitSignOut: true
+            };
+            clearUserPresence(explicitUserId);
+        });
+
         // Heartbeat for connection quality
         socket.on('heartbeat', () => {
             if (activeUsers[socket.id]) {
@@ -814,8 +997,8 @@ socket.on('end_call', (data) => {
         socket.on('disconnect', async () => {
             console.log('🔌 User disconnected:', socket.id);
             
-            const disconnectedUser = activeUsers[socket.id];
-            const userId = removeSocketPresence(socket.id);
+            const disconnectedPresence = removeSocketPresence(socket.id);
+            const userId = disconnectedPresence.userId;
             
             // Clean up active calls
             Object.keys(activeCalls).forEach(roomId => {
@@ -839,21 +1022,6 @@ socket.on('end_call', (data) => {
                     }
                 }
             });
-
-            const normalizedUserId = normalizeUserId(userId);
-            if (normalizedUserId && getUserSockets(normalizedUserId).length === 0) {
-                const canReceiveTerminatedCalls = await hasRegisteredCallDevice(normalizedUserId);
-                if (canReceiveTerminatedCalls) {
-                    const previousReachableEntry = (users[normalizedUserId] || []).find((user) => !user.socket_id) || null;
-                    users[normalizedUserId] = [
-                        buildReachablePresence(
-                            normalizedUserId,
-                            disconnectedUser?.userInfo || {},
-                            previousReachableEntry
-                        )
-                    ];
-                }
-            }
             
             // Remove from rooms
             for (const roomId in rooms) {
@@ -866,8 +1034,11 @@ socket.on('end_call', (data) => {
                 }
             }
             
-            // Update online users
-            emitPresence();
+            if (userId && !socket.data?.explicitSignOut) {
+                schedulePresenceDisconnect(userId, disconnectedPresence.userInfo);
+            } else {
+                emitPresence();
+            }
         });
     });
 
