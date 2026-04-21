@@ -147,10 +147,6 @@ function setupSocket(server) {
             const userRef = admin.firestore().collection("users").doc(normalizedUserId);
             const userSnapshot = await userRef.get();
 
-            if (!userSnapshot.exists) {
-                return false;
-            }
-
             if (userSnapshot.data()?.deviceToken) {
                 return true;
             }

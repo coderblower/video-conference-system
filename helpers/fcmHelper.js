@@ -215,27 +215,29 @@ async function getUserTokens(userId) {
     return [];
   }
 
-  const userDoc = await admin.firestore().collection("users").doc(String(userId)).get();
-  if (!userDoc.exists) {
-    return [];
-  }
+  const userRef = admin.firestore().collection("users").doc(String(userId));
+  const userDoc = await userRef.get();
 
   const tokens = new Set();
   const primaryToken = userDoc.data()?.deviceToken;
-  if (primaryToken) {
+  if (typeof primaryToken === "string" && primaryToken.trim()) {
     tokens.add(primaryToken);
   }
 
   try {
-    const devicesSnapshot = await userDoc.ref.collection("devices").get();
+    const devicesSnapshot = await userRef.collection("devices").get();
     devicesSnapshot.docs.forEach((doc) => {
       const token = doc.data()?.fcmToken;
-      if (token) {
+      if (typeof token === "string" && token.trim()) {
         tokens.add(token);
       }
     });
   } catch (error) {
     console.log("⚠️  Failed to inspect device tokens:", error.message);
+  }
+
+  if (!userDoc.exists && tokens.size > 0) {
+    console.log(`ℹ️  Found ${tokens.size} FCM token(s) for user ${userId} via devices subcollection only`);
   }
 
   return Array.from(tokens);
