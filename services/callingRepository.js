@@ -35,6 +35,15 @@ function normalizeUserId(userId) {
   return String(userId);
 }
 
+function normalizeOptionalToken(value, fallback = null) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  const normalized = String(value).trim();
+  return normalized ? normalized : fallback;
+}
+
 function buildDisplayName(userInfo = {}, fallback = null) {
   const firstName = userInfo.firstName || userInfo.firstname || '';
   const lastName = userInfo.lastName || userInfo.lastname || '';
@@ -119,22 +128,30 @@ async function registerDevice(payload = {}) {
     where: { userId, deviceId },
   });
 
+  const nextFcmToken = normalizeOptionalToken(payload.fcmToken, existing?.fcmToken || null);
+  const nextVoipToken = normalizeOptionalToken(payload.voipToken, existing?.voipToken || null);
+  const existingMetadata = parseMetadata(existing?.metadata) || {};
+  const nextMetadata =
+    payload.userInfo && Object.keys(payload.userInfo).length > 0
+      ? { ...existingMetadata, ...payload.userInfo }
+      : existingMetadata;
+
   const values = {
     userId,
     deviceId,
-    fcmToken: payload.fcmToken || null,
-    voipToken: payload.voipToken || null,
+    fcmToken: nextFcmToken,
+    voipToken: nextVoipToken,
     socketId: payload.socketId || existing?.socketId || null,
     appName: payload.appName || existing?.appName || null,
     deviceModel: payload.deviceModel || existing?.deviceModel || null,
     devicePlatform: payload.devicePlatform || existing?.devicePlatform || null,
     isLoggedIn: true,
     isOnline: Boolean(payload.socketId || existing?.socketId),
-    isPushEnabled: Boolean(payload.fcmToken || existing?.fcmToken),
+    isPushEnabled: Boolean(nextFcmToken),
     lastSeenAt: new Date(),
     lastLoginAt: existing?.lastLoginAt || new Date(),
     lastLogoutAt: null,
-    metadata: stringifyMetadata(payload.userInfo || parseMetadata(existing?.metadata)),
+    metadata: stringifyMetadata(nextMetadata),
   };
 
   let device = existing;
