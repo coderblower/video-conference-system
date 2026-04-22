@@ -1,5 +1,10 @@
 const {Server} = require('socket.io');
-const { admin, sendCallNotification, sendDataOnlyCallNotification } = require('../helpers/fcmHelper');
+const {
+    sendCallNotification,
+    sendDataOnlyCallNotification,
+    sendCallLifecycleNotification
+} = require('../helpers/fcmHelper');
+const callingRepository = require('../services/callingRepository');
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -14,7 +19,9 @@ function setupSocket(server) {
     const messages = {};
     const activeUsers = {};
     const activeCalls = {};
+    const activeCallTimeouts = {};
     let users = {};
+    const CALL_RING_TIMEOUT_MS = Number(process.env.CALL_RING_TIMEOUT_MS || 30000);
 
     // Connection quality monitoring
     const connectionStats = {};
@@ -29,6 +36,23 @@ function setupSocket(server) {
 
     const emitPresence = (target = io) => {
         target.emit('online_user', users);
+    };
+
+    const emitDashboard = async (target = io) => {
+        try {
+            const dashboard = await callingRepository.getDashboardStats({
+                activeCallsCount: Object.keys(activeCalls).length,
+                connectedSockets: Object.keys(activeUsers).length,
+            });
+            target.emit('calling_dashboard', dashboard);
+        } catch (error) {
+            console.error('⚠️  Failed to emit dashboard:', error.message);
+        }
+    };
+
+    const emitRealtimeState = async (target = io) => {
+        emitPresence(target);
+        await emitDashboard(target);
     };
 
     const getUserSockets = (userId, fallbackSocketId = null) => {
@@ -49,7 +73,7 @@ function setupSocket(server) {
         return Array.from(sockets);
     };
 
-    const registerUserPresence = (socket, userInfo = {}) => {
+    const registerUserPresence = async (socket, userInfo = {}) => {
         const normalizedUserId = normalizeUserId(userInfo.id);
         if (!normalizedUserId) {
             return null;
@@ -74,6 +98,20 @@ function setupSocket(server) {
             userInfo
         };
 
+        try {
+            await callingRepository.markSocketConnected({
+                userId: normalizedUserId,
+                deviceId: userInfo.deviceId || socket.id,
+                socketId: socket.id,
+                appName: userInfo.appName,
+                deviceModel: userInfo.deviceModel,
+                devicePlatform: userInfo.devicePlatform,
+                userInfo,
+            });
+        } catch (error) {
+            console.error('⚠️  Failed to persist socket presence:', error.message);
+        }
+
         return normalizedUserId;
     };
 
@@ -95,6 +133,21 @@ function setupSocket(server) {
         }
 
         return normalizedUserId;
+    };
+
+    const clearRingTimeout = (roomId) => {
+        if (!activeCallTimeouts[roomId]) {
+            return;
+        }
+
+        clearTimeout(activeCallTimeouts[roomId]);
+        delete activeCallTimeouts[roomId];
+    };
+
+    const emitToUser = (userId, eventName, payload = {}, fallbackSocketId = null) => {
+        getUserSockets(userId, fallbackSocketId).forEach((socketId) => {
+            io.to(socketId).emit(eventName, payload);
+        });
     };
 
     const cacheCallState = (socket, data = {}) => {
@@ -126,37 +179,95 @@ function setupSocket(server) {
         return activeCalls[roomId];
     };
 
-    const buildReachablePresence = (userId, userInfo = {}, existingEntry = null) => {
-        const fallbackName = existingEntry?.name || `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
-        return {
-            name: fallbackName,
-            socket_id: null,
-            avatar: existingEntry?.avatar || userInfo.avatar || userInfo.profilePic || null,
-            status: 'online',
-            lastSeen: new Date()
-        };
+    const persistCallState = async (roomId, callData = {}) => {
+        try {
+            await callingRepository.upsertCallHistory(roomId, {
+                callerId: callData.callerId,
+                calleeId: callData.calleeId,
+                callerName: callData.callerName,
+                calleeName: callData.calleeName,
+                callType: callData.callType,
+                status: callData.status,
+                ringingStartedAt: callData.createdAt || new Date(),
+                metadata: {
+                    callerAvatar: callData.callerAvatar || null,
+                },
+            });
+        } catch (error) {
+            console.error('⚠️  Failed to persist call state:', error.message);
+        }
     };
 
-    const hasRegisteredCallDevice = async (userId) => {
-        const normalizedUserId = normalizeUserId(userId);
-        if (!normalizedUserId) {
-            return false;
+    const cleanupCall = async (roomId, options = {}) => {
+        const call = activeCalls[roomId];
+        if (!call) {
+            return;
         }
 
-        try {
-            const userRef = admin.firestore().collection("users").doc(normalizedUserId);
-            const userSnapshot = await userRef.get();
+        const endedAt = new Date();
+        const reason = options.reason || options.status || 'ended';
+        const payload = {
+            roomId,
+            endedBy: options.endedBy || null,
+            status: options.status || 'ended',
+            reason,
+            timestamp: endedAt.toISOString(),
+        };
 
-            if (userSnapshot.data()?.deviceToken) {
-                return true;
+        clearRingTimeout(roomId);
+        call.status = payload.status;
+        call.endedAt = endedAt;
+
+        if (options.notifyCaller !== false) {
+            emitToUser(call.callerId, 'call_ended', payload, call.callerSocketId);
+        }
+
+        if (options.notifyCallee !== false) {
+            emitToUser(call.calleeId, 'call_ended', payload);
+        }
+
+        io.to(roomId).emit('call_ended', payload);
+
+        if (options.pushType) {
+            await sendCallLifecycleNotification(call.calleeId, options.pushType, roomId, {
+                callerId: call.callerId,
+                callerName: call.callerName,
+                callType: call.callType,
+                reason,
+            });
+        }
+
+        await callingRepository.finalizeCall(roomId, {
+            status: payload.status,
+            endedBy: options.endedBy || null,
+            disconnectReason: reason,
+            endedAt,
+        });
+
+        delete activeCalls[roomId];
+        await emitDashboard();
+    };
+
+    const scheduleRingTimeout = (roomId) => {
+        clearRingTimeout(roomId);
+        activeCallTimeouts[roomId] = setTimeout(async () => {
+            try {
+                const call = activeCalls[roomId];
+                if (!call || !['calling', 'initiating', 'ringing'].includes(call.status)) {
+                    return;
+                }
+
+                console.log(`⏰ Ring timeout reached for room ${roomId}`);
+                await cleanupCall(roomId, {
+                    status: 'timeout',
+                    reason: 'timeout',
+                    endedBy: call.callerId,
+                    pushType: 'CALL_TIMEOUT',
+                });
+            } catch (error) {
+                console.error('❌ Error timing out call:', error);
             }
-
-            const devicesSnapshot = await userRef.collection("devices").limit(1).get();
-            return !devicesSnapshot.empty;
-        } catch (error) {
-            console.error('⚠️  Failed checking registered call device:', error.message);
-            return false;
-        }
+        }, CALL_RING_TIMEOUT_MS);
     };
 
     setInterval(() => {
@@ -180,15 +291,15 @@ function setupSocket(server) {
     
 
         // Enhanced user join with presence
-        socket.on('join_online', (userInfo) => {
+        socket.on('join_online', async (userInfo) => {
             if (userInfo && userInfo.id) {
-                registerUserPresence(socket, userInfo);
+                await registerUserPresence(socket, userInfo);
             }
 
             console.log('👤 User joined:', userInfo.id, 'Socket:', socket.id);
             
             socket.emit('new-users', users);
-            emitPresence();
+            await emitRealtimeState();
         });
 
         // Enhanced call initiation
@@ -229,6 +340,7 @@ function setupSocket(server) {
                     callType,
                     status: 'initiating'
                 });
+                await persistCallState(roomId, activeCalls[roomId]);
 
                 // Get callee socket connections
                 const calleeConnections = getUserSockets(calleeId);
@@ -256,6 +368,10 @@ function setupSocket(server) {
                 
                 if (fcmResult.success || calleeConnections.length > 0) {
                     activeCalls[roomId].status = 'calling';
+                    await callingRepository.upsertCallHistory(roomId, {
+                        status: 'calling',
+                    });
+                    scheduleRingTimeout(roomId);
                     socket.emit('call_initiated', {
                         success: true,
                         roomId,
@@ -282,7 +398,7 @@ function setupSocket(server) {
       
 
         // Enhanced end call handler
-socket.on('end_call', (data) => {
+socket.on('end_call', async (data) => {
 
     console.log('🔚 End call request received:', data);
 
@@ -297,39 +413,14 @@ socket.on('end_call', (data) => {
             timestamp: new Date(timestamp || Date.now()).toISOString()
         });
 
-        // Clean up active call
         if (activeCalls[roomId]) {
-            activeCalls[roomId].status = 'ended';
-            activeCalls[roomId].endedBy = endedBy;
-            activeCalls[roomId].endedAt = new Date();
-        }
-
-        // Notify the specific recipient
-        if (to) {
-            const recipientSockets = getUserSockets(to);
-
-            recipientSockets.forEach(socketId => {
-                io.to(socketId).emit('call_ended', {
-                    roomId,
-                    from,
-                    endedBy,
-                    timestamp: timestamp || Date.now()
-                });
-                console.log('📞 Notified socket of call end:', socketId, 'for user:', to);
+            await cleanupCall(roomId, {
+                status: 'ended',
+                reason: 'ended',
+                endedBy: normalizeUserId(endedBy) || normalizeUserId(from) || normalizeUserId(to),
+                pushType: 'CALL_ENDED',
             });
         }
-
-        // Also broadcast to room participants as fallback
-        socket.to(roomId).emit('call_ended', {
-            roomId,
-            endedBy,
-            timestamp: timestamp || Date.now()
-        });
-
-        // Clean up call data after delay
-        setTimeout(() => {
-            delete activeCalls[roomId];
-        }, 5000);
 
         socket.emit('call_end_confirmed', {
             success: true,
@@ -351,44 +442,48 @@ socket.on('end_call', (data) => {
 
 
 
-  socket.on('end_call_decline', (data) => {
+  socket.on('end_call_decline', async (data) => {
     try {
         const { callID, roomId } = data;
         const decliningUserId = activeUsers[socket.id]?.userId;
+        const targetRoomId =
+            roomId ||
+            Object.keys(activeCalls).find((activeRoomId) => {
+                const call = activeCalls[activeRoomId];
+                return (
+                    call.callerId === normalizeUserId(callID) ||
+                    call.calleeId === normalizeUserId(callID)
+                );
+            });
 
         console.log('❌ Call declined:', {
             callID,
-            roomId,
+            roomId: targetRoomId,
             decliningUserId,
             timestamp: new Date().toISOString()
         });
 
         // Find sockets for the user being declined
-        const activeCall = roomId ? activeCalls[roomId] : null;
+        const activeCall = targetRoomId ? activeCalls[targetRoomId] : null;
         const targetSockets = getUserSockets(callID, activeCall?.callerSocketId);
 
         // Emit decline to target user sockets
         targetSockets.forEach(socketId => {
             io.to(socketId).emit('call_declined', {
                 callID,
-                roomId,
+                roomId: targetRoomId,
                 declinedBy: decliningUserId || socket.id,
                 timestamp: Date.now()
             });
         });
 
-        
-
-        // Clean up call if exists
-        if (roomId && activeCalls[roomId]) {
-            activeCalls[roomId].status = 'declined';
-            activeCalls[roomId].declinedBy = decliningUserId;
-            delete activeCalls[roomId];
-        }
-
-        // End any CallKit calls
-        if (callID) {
-            // This would be handled by your FCM/CallKit logic
+        if (targetRoomId && activeCalls[targetRoomId]) {
+            await cleanupCall(targetRoomId, {
+                status: 'declined',
+                reason: 'declined',
+                endedBy: decliningUserId || normalizeUserId(callID),
+                pushType: 'CALL_DECLINED',
+            });
         }
 
     } catch (error) {
@@ -414,6 +509,10 @@ socket.on('end_call', (data) => {
                             normalizedUserId
                         ]));
                         activeCalls[roomId].connectedAt = new Date();
+                        clearRingTimeout(roomId);
+                        await callingRepository.markCallAccepted(roomId, {
+                            answeredAt: new Date(),
+                        });
                         
                         // Notify caller that call was accepted
                         const callerConnections = getUserSockets(
@@ -427,33 +526,19 @@ socket.on('end_call', (data) => {
                             });
                         });
                     } else if (status === 'declined') {
-                        // Notify caller that call was declined
-                        const callerConnections = getUserSockets(
-                            activeCalls[roomId].callerId,
-                            activeCalls[roomId].callerSocketId
-                        );
-                        callerConnections.forEach(socketId => {
-                            io.to(socketId).emit('call_declined', {
-                                roomId,
-                                declinedBy: normalizedUserId || userId
-                            });
+                        await cleanupCall(roomId, {
+                            status: 'declined',
+                            reason: 'declined',
+                            endedBy: normalizedUserId || userId,
+                            pushType: 'CALL_DECLINED',
                         });
-                        
-                        // Clean up call
-                        delete activeCalls[roomId];
                     } else if (status === 'ended') {
-                        activeCalls[roomId].endedAt = new Date();
-                        
-                        // Notify all participants
-                        socket.to(roomId).emit('call_ended', {
-                            roomId,
-                            endedBy: normalizedUserId || userId
+                        await cleanupCall(roomId, {
+                            status: 'ended',
+                            reason: 'ended',
+                            endedBy: normalizedUserId || userId,
+                            pushType: 'CALL_ENDED',
                         });
-                        
-                        // Clean up call after a delay
-                        setTimeout(() => {
-                            delete activeCalls[roomId];
-                        }, 5000);
                     }
                 }
 
@@ -644,6 +729,7 @@ socket.on('end_call', (data) => {
                     callType: callType || 'video',
                     status: 'calling'
                 });
+                await persistCallState(roomId, activeCalls[roomId]);
 
                 const result = await sendDataOnlyCallNotification(
                     callee,
@@ -656,6 +742,7 @@ socket.on('end_call', (data) => {
                 const userSockets = getUserSockets(callee);
 
                 if (result.success || userSockets.length > 0) {
+                    scheduleRingTimeout(roomId);
                     socket.emit('fcm_sent', {
                         success: true,
                         callee,
@@ -810,11 +897,11 @@ socket.on('end_call', (data) => {
         socket.on('disconnect', async () => {
             console.log('🔌 User disconnected:', socket.id);
             
-            const disconnectedUser = activeUsers[socket.id];
             const userId = removeSocketPresence(socket.id);
+            await callingRepository.clearSocket(socket.id);
             
             // Clean up active calls
-            Object.keys(activeCalls).forEach(roomId => {
+            for (const roomId of Object.keys(activeCalls)) {
                 const call = activeCalls[roomId];
                 const normalizedUserId = normalizeUserId(userId);
                 const isCallParticipant = normalizedUserId && call.participants.includes(normalizedUserId);
@@ -825,7 +912,12 @@ socket.on('end_call', (data) => {
                     
                     // End call if no participants left
                     if (call.participants.length === 0) {
-                        delete activeCalls[roomId];
+                        await cleanupCall(roomId, {
+                            status: 'ended',
+                            reason: 'disconnected',
+                            endedBy: normalizedUserId,
+                            pushType: 'CALL_ENDED',
+                        });
                     } else {
                         // Notify remaining participants
                         io.to(roomId).emit('participant_disconnected', {
@@ -833,21 +925,6 @@ socket.on('end_call', (data) => {
                             timestamp: Date.now()
                         });
                     }
-                }
-            });
-
-            const normalizedUserId = normalizeUserId(userId);
-            if (normalizedUserId && getUserSockets(normalizedUserId).length === 0) {
-                const canReceiveTerminatedCalls = await hasRegisteredCallDevice(normalizedUserId);
-                if (canReceiveTerminatedCalls) {
-                    const previousReachableEntry = (users[normalizedUserId] || []).find((user) => !user.socket_id) || null;
-                    users[normalizedUserId] = [
-                        buildReachablePresence(
-                            normalizedUserId,
-                            disconnectedUser?.userInfo || {},
-                            previousReachableEntry
-                        )
-                    ];
                 }
             }
             
@@ -863,7 +940,7 @@ socket.on('end_call', (data) => {
             }
             
             // Update online users
-            emitPresence();
+            await emitRealtimeState();
         });
     });
 

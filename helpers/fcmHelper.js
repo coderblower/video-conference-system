@@ -1,5 +1,6 @@
 const admin = require("firebase-admin");
 const serviceAccount = require("../secrets/auth.json");
+const callingRepository = require("../services/callingRepository");
 
 // Initialize Firebase Admin SDK only once
 if (!admin.apps.length) {
@@ -11,25 +12,9 @@ if (!admin.apps.length) {
 
 // Track available services
 const firebaseServices = {
-  firestore: false,
   auth: false,
   messaging: false
 };
-
-function ensureFirestoreAvailable() {
-  if (firebaseServices.firestore) {
-    return true;
-  }
-
-  try {
-    admin.firestore();
-    firebaseServices.firestore = true;
-    return true;
-  } catch (error) {
-    console.log("⚠️  Firestore unavailable:", error.message);
-    return false;
-  }
-}
 
 function ensureMessagingAvailable() {
   if (firebaseServices.messaging) {
@@ -53,22 +38,6 @@ async function testFirebaseConnection() {
   console.log('   🔍 Testing Firebase services...\n');
   console.log(`   📋 Project: ${serviceAccount.project_id}`);
   console.log(`   📧 Service Account: ${serviceAccount.client_email}\n`);
-
-  // Test Firestore
-  try {
-    const testRef = admin.firestore().collection("_test").doc("connection_test");
-    await testRef.set({
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      status: "connected"
-    });
-    await testRef.delete();
-    firebaseServices.firestore = true;
-    console.log("   ✅ Firestore: Connected");
-  } catch (error) {
-    console.log("   ❌ Firestore:", error.message);
-    console.log("      → Enable Firestore in Firebase Console");
-    return false;
-  }
 
   // Test Authentication (optional)
   try {
@@ -94,37 +63,15 @@ async function testFirebaseConnection() {
   }
 
   console.log();
-  return firebaseServices.firestore;
+  return firebaseServices.messaging;
 }
 
 /**
  * Delete all documents in a collection
  */
 async function clearCollection(collectionPath) {
-  if (!ensureFirestoreAvailable()) {
-    console.log(`   ⚠️  Firestore unavailable - cannot clear '${collectionPath}'`);
-    return 0;
-  }
-
-  try {
-    const collectionRef = admin.firestore().collection(collectionPath);
-    const snapshot = await collectionRef.get();
-    
-    if (snapshot.empty) {
-      console.log(`   📭 '${collectionPath}' is empty`);
-      return 0;
-    }
-
-    const batch = admin.firestore().batch();
-    snapshot.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-
-    console.log(`   🗑️  Cleared ${snapshot.size} documents from '${collectionPath}'`);
-    return snapshot.size;
-  } catch (error) {
-    console.error(`   ❌ Error clearing '${collectionPath}':`, error.message);
-    return 0;
-  }
+  console.log(`   ℹ️  Firestore clearing disabled. '${collectionPath}' is managed outside Firebase.`);
+  return 0;
 }
 
 /**
@@ -148,9 +95,9 @@ async function clearFirebaseData() {
  */
 async function initializeFirebase() {
   const isConnected = await testFirebaseConnection();
-  
+
   if (!isConnected) {
-    console.log('   ❌ Firestore connection required but failed\n');
+    console.log('   ❌ Cloud Messaging connection required but failed\n');
     return false;
   }
 
@@ -187,6 +134,24 @@ async function sendFCM(token, title, body, data = {}) {
     tokens,
     notification: { title, body },
     data: normalizeDataPayload(data),
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "incoming_call",
+        sound: "default",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+          contentAvailable: true,
+        },
+      },
+      headers: {
+        "apns-priority": "10",
+      },
+    },
   };
 
   try {
@@ -211,36 +176,7 @@ function normalizeDataPayload(data = {}) {
 }
 
 async function getUserTokens(userId) {
-  if (!ensureFirestoreAvailable()) {
-    return [];
-  }
-
-  const userRef = admin.firestore().collection("users").doc(String(userId));
-  const userDoc = await userRef.get();
-
-  const tokens = new Set();
-  const primaryToken = userDoc.data()?.deviceToken;
-  if (typeof primaryToken === "string" && primaryToken.trim()) {
-    tokens.add(primaryToken);
-  }
-
-  try {
-    const devicesSnapshot = await userRef.collection("devices").get();
-    devicesSnapshot.docs.forEach((doc) => {
-      const token = doc.data()?.fcmToken;
-      if (typeof token === "string" && token.trim()) {
-        tokens.add(token);
-      }
-    });
-  } catch (error) {
-    console.log("⚠️  Failed to inspect device tokens:", error.message);
-  }
-
-  if (!userDoc.exists && tokens.size > 0) {
-    console.log(`ℹ️  Found ${tokens.size} FCM token(s) for user ${userId} via devices subcollection only`);
-  }
-
-  return Array.from(tokens);
+  return callingRepository.getActiveTokensForUser(userId);
 }
 
 async function sendDataOnlyMessage(tokens, data = {}) {
@@ -267,7 +203,7 @@ async function sendDataOnlyMessage(tokens, data = {}) {
         },
       },
       headers: {
-        "apns-priority": "10",
+        "apns-priority": "5",
         "apns-push-type": "background",
       },
     },
@@ -297,32 +233,21 @@ async function sendCallNotification(
 
   console.log(`📲 Sending call notification to user: ${calleeId}`);
 
-  
-  if (!ensureFirestoreAvailable()) {
-    console.log("⚠️  Cannot send notification - Firestore unavailable");
-    return { success: false, error: "firestore_unavailable" };
-  }
-
   try {
     const tokens = await getUserTokens(calleeId);
     if (tokens.length === 0) {
-      console.log("❌ User not found:", calleeId);
+      console.log("❌ No registered call device for user:", calleeId);
       return { success: false, error: "user_not_found_or_no_token" };
     }
 
-    const response = await sendFCM(
-      tokens, 
-      "Incoming Call 📞", 
-      `${callerName} is calling you`, 
-      normalizeDataPayload({
+    const response = await sendDataOnlyMessage(tokens, {
         type: "CALL",
         callerName,
         roomId,
         callerId,
         callType,
         avatar,
-      })
-    );
+      });
 
     return {
       success: Boolean(response),
@@ -344,11 +269,6 @@ async function sendDataOnlyCallNotification(
   avatar = null
 ) {
   console.log(`📲 Sending data-only call notification to user: ${calleeId}`);
-
-  if (!ensureFirestoreAvailable()) {
-    console.log("⚠️  Cannot send notification - Firestore unavailable");
-    return { success: false, error: "firestore_unavailable" };
-  }
 
   try {
     const tokens = await getUserTokens(calleeId);
@@ -376,11 +296,40 @@ async function sendDataOnlyCallNotification(
   }
 }
 
+async function sendCallLifecycleNotification(
+  userId,
+  type,
+  roomId,
+  payload = {}
+) {
+  try {
+    const tokens = await getUserTokens(userId);
+    if (tokens.length === 0) {
+      return { success: false, error: "no_token" };
+    }
+
+    const response = await sendDataOnlyMessage(tokens, {
+      type,
+      roomId,
+      ...payload,
+    });
+
+    return {
+      success: Boolean(response),
+      response,
+    };
+  } catch (error) {
+    console.error(`❌ Error sending ${type} lifecycle notification:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = { 
   admin,
   sendFCM, 
   sendCallNotification, 
   sendDataOnlyCallNotification,
+  sendCallLifecycleNotification,
   initializeFirebase,
   testFirebaseConnection,
   clearFirebaseData,
