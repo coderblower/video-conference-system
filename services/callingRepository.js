@@ -51,6 +51,19 @@ function buildDisplayName(userInfo = {}, fallback = null) {
   return fullName || userInfo.name || fallback || null;
 }
 
+async function resolveUserDisplayName(userId, fallback = null) {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId) {
+    return fallback;
+  }
+
+  const presence = await UserPresence.findOne({
+    where: { userId: normalizedUserId },
+  });
+
+  return buildDisplayName(parseMetadata(presence?.metadata) || {}, presence?.displayName || fallback);
+}
+
 async function syncPresence(userId, userInfo = {}) {
   const normalizedUserId = normalizeUserId(userId);
   if (!normalizedUserId) {
@@ -491,13 +504,19 @@ async function listUserCallHistory(userId, limit = 30) {
     limit,
   });
 
-  return histories.map((history) => ({
+  const resolvedHistories = await Promise.all(
+    histories.map(async (history) => {
+      const metadata = parseMetadata(history.metadata) || {};
+      const callerName = history.callerName || await resolveUserDisplayName(history.callerId, metadata.callerName || null);
+      const calleeName = history.calleeName || await resolveUserDisplayName(history.calleeId, metadata.calleeName || null);
+
+      return {
     id: history.id,
     roomId: history.roomId,
     callerId: history.callerId,
     calleeId: history.calleeId,
-    callerName: history.callerName,
-    calleeName: history.calleeName,
+    callerName,
+    calleeName,
     callType: history.callType,
     status: history.status,
     endedBy: history.endedBy,
@@ -506,10 +525,14 @@ async function listUserCallHistory(userId, limit = 30) {
     answeredAt: history.answeredAt,
     endedAt: history.endedAt,
     durationSeconds: history.durationSeconds,
-    metadata: parseMetadata(history.metadata),
+    metadata,
     createdAt: history.createdAt,
     updatedAt: history.updatedAt,
-  }));
+      };
+    })
+  );
+
+  return resolvedHistories;
 }
 
 async function getDashboardStats(extra = {}) {
@@ -543,6 +566,7 @@ module.exports = {
   normalizeUserId,
   registerDevice,
   releaseDeviceOwnership,
+  resolveUserDisplayName,
   syncPresence,
   upsertCallHistory,
 };
