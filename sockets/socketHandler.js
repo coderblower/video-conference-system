@@ -79,6 +79,11 @@ function setupSocket(server) {
             return null;
         }
 
+        const previousUserId = normalizeUserId(activeUsers[socket.id]?.userId);
+        if (previousUserId && previousUserId !== normalizedUserId) {
+            removeSocketPresence(socket.id);
+        }
+
         users[normalizedUserId] = [
             ...(users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id),
             {

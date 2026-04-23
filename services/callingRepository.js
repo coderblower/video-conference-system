@@ -116,6 +116,67 @@ async function syncPresence(userId, userInfo = {}) {
   });
 }
 
+async function releaseDeviceOwnership(payload = {}) {
+  const userId = normalizeUserId(payload.userId);
+  if (!userId) {
+    return;
+  }
+
+  const conditions = [];
+  const normalizedDeviceId = payload.deviceId ? String(payload.deviceId) : null;
+  const normalizedSocketId = payload.socketId ? String(payload.socketId) : null;
+  const normalizedFcmToken = normalizeOptionalToken(payload.fcmToken, null);
+
+  if (normalizedDeviceId) {
+    conditions.push({ deviceId: normalizedDeviceId });
+  }
+
+  if (normalizedSocketId) {
+    conditions.push({ socketId: normalizedSocketId });
+  }
+
+  if (normalizedFcmToken) {
+    conditions.push({ fcmToken: normalizedFcmToken });
+  }
+
+  if (conditions.length === 0) {
+    return;
+  }
+
+  const conflictingDevices = await CallDevice.findAll({
+    where: {
+      userId: {
+        [Op.ne]: userId,
+      },
+      [Op.or]: conditions,
+    },
+  });
+
+  if (conflictingDevices.length === 0) {
+    return;
+  }
+
+  const affectedUserIds = new Set();
+
+  await Promise.all(
+    conflictingDevices.map(async (device) => {
+      affectedUserIds.add(device.userId);
+      await device.update({
+        socketId: null,
+        isOnline: false,
+        isLoggedIn: false,
+        isPushEnabled: false,
+        fcmToken: null,
+        voipToken: null,
+        lastSeenAt: new Date(),
+        lastLogoutAt: new Date(),
+      });
+    })
+  );
+
+  await Promise.all(Array.from(affectedUserIds).map((affectedUserId) => syncPresence(affectedUserId)));
+}
+
 async function registerDevice(payload = {}) {
   const userId = normalizeUserId(payload.userId);
   const deviceId = payload.deviceId ? String(payload.deviceId) : null;
@@ -123,6 +184,8 @@ async function registerDevice(payload = {}) {
   if (!userId || !deviceId) {
     throw new Error('userId and deviceId are required');
   }
+
+  await releaseDeviceOwnership(payload);
 
   const existing = await CallDevice.findOne({
     where: { userId, deviceId },
@@ -479,6 +542,7 @@ module.exports = {
   logoutDevice,
   normalizeUserId,
   registerDevice,
+  releaseDeviceOwnership,
   syncPresence,
   upsertCallHistory,
 };
