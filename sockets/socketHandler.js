@@ -942,9 +942,13 @@ socket.on('end_call', async (data) => {
 
                 if (isCallParticipant || isCallerSocket) {
                     call.participants = call.participants.filter(id => id !== normalizedUserId);
-                    
-                    // End call if no participants left
-                    if (call.participants.length === 0) {
+
+                    const shouldEndDisconnectedCall =
+                        call.status === 'accepted' ||
+                        call.status === 'ended' ||
+                        call.participants.length === 0;
+
+                    if (shouldEndDisconnectedCall) {
                         await cleanupCall(roomId, {
                             status: 'ended',
                             reason: 'disconnected',
