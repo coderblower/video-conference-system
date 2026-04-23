@@ -576,6 +576,34 @@ socket.on('end_call', async (data) => {
                     if (!activeCalls[roomId].participants.includes(normalizedUserId)) {
                         activeCalls[roomId].participants.push(normalizedUserId);
                     }
+
+                    const isCalleeJoiningAcceptedCall =
+                        normalizedUserId === activeCalls[roomId].calleeId &&
+                        ['initiating', 'calling', 'ringing'].includes(activeCalls[roomId].status);
+
+                    if (isCalleeJoiningAcceptedCall) {
+                        activeCalls[roomId].status = 'accepted';
+                        activeCalls[roomId].updatedAt = new Date();
+                        activeCalls[roomId].connectedAt = activeCalls[roomId].connectedAt || new Date();
+                        clearRingTimeout(roomId);
+
+                        callingRepository.markCallAccepted(roomId, {
+                            answeredAt: activeCalls[roomId].connectedAt,
+                        }).catch((error) => {
+                            console.error('⚠️  Failed to persist accepted call on room join:', error.message);
+                        });
+
+                        const callerConnections = getUserSockets(
+                            activeCalls[roomId].callerId,
+                            activeCalls[roomId].callerSocketId
+                        );
+                        callerConnections.forEach((socketId) => {
+                            io.to(socketId).emit('call_accepted', {
+                                roomId,
+                                acceptedBy: normalizedUserId
+                            });
+                        });
+                    }
                 }
                 
                 socket.to(roomId).emit('user_joined_call', {
