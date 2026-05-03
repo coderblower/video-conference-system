@@ -5,6 +5,7 @@ const {
     sendCallLifecycleNotification
 } = require('../helpers/fcmHelper');
 const callingRepository = require('../services/callingRepository');
+const { createMediasoupRoomManager } = require('./mediasoupRoomManager');
 
 function setupSocket(server) {
     const io = new Server(server, {
@@ -13,9 +14,11 @@ function setupSocket(server) {
             methods: ["GET", "POST"]
         }
     });
+    const mediasoupRoomManager = createMediasoupRoomManager(io);
 
     // Store users, rooms, messages, and active calls
     const rooms = {};
+    const webRooms = {};
     const messages = {};
     const activeUsers = {};
     const activeCalls = {};
@@ -184,6 +187,50 @@ function setupSocket(server) {
         return activeCalls[roomId];
     };
 
+    const emitWebRoomState = (roomId) => {
+        const room = webRooms[roomId];
+        if (!room) {
+            return;
+        }
+
+        io.to(roomId).emit('web-room:participants', {
+            roomId,
+            participants: Object.values(room.participants),
+            capacity: room.capacity,
+        });
+    };
+
+    const removeParticipantFromWebRoom = (socketId) => {
+        const roomId = activeUsers[socketId]?.webRoomId;
+        if (!roomId || !webRooms[roomId]) {
+            return null;
+        }
+
+        const room = webRooms[roomId];
+        const participant = room.participants[socketId];
+        if (!participant) {
+            return roomId;
+        }
+
+        delete room.participants[socketId];
+        delete room.socketToParticipant[socketId];
+        delete activeUsers[socketId].webRoomId;
+
+        io.to(roomId).emit('web-room:user-left', {
+            roomId,
+            participantId: socketId,
+            participant,
+            timestamp: Date.now(),
+        });
+        emitWebRoomState(roomId);
+
+        if (Object.keys(room.participants).length === 0) {
+            delete webRooms[roomId];
+        }
+
+        return roomId;
+    };
+
     const persistCallState = async (roomId, callData = {}) => {
         try {
             await callingRepository.upsertCallHistory(roomId, {
@@ -291,6 +338,8 @@ function setupSocket(server) {
             connectedAt: new Date(),
             lastActivity: new Date()
         };
+
+        mediasoupRoomManager.attachSocket(socket);
 
         socket.emit('connected', socket.id);
     
@@ -913,6 +962,135 @@ socket.on('end_call', async (data) => {
             }
         });
 
+        socket.on('web-room:join', ({ roomId, name, joinKey }) => {
+            const sanitizedRoomId = String(roomId || joinKey || '').trim().toLowerCase();
+            const sanitizedName = String(name || '').trim();
+
+            if (!sanitizedRoomId || !sanitizedName) {
+                socket.emit('web-room:error', {
+                    code: 'INVALID_JOIN',
+                    message: 'roomId and name are required.',
+                });
+                return;
+            }
+
+            if (activeUsers[socket.id]?.webRoomId && activeUsers[socket.id].webRoomId !== sanitizedRoomId) {
+                removeParticipantFromWebRoom(socket.id);
+            }
+
+            if (!webRooms[sanitizedRoomId]) {
+                webRooms[sanitizedRoomId] = {
+                    roomId: sanitizedRoomId,
+                    capacity: 4,
+                    createdAt: new Date(),
+                    participants: {},
+                    socketToParticipant: {},
+                };
+            }
+
+            const room = webRooms[sanitizedRoomId];
+            const currentParticipants = Object.keys(room.participants);
+            const isAlreadyJoined = Boolean(room.participants[socket.id]);
+
+            if (!isAlreadyJoined && currentParticipants.length >= room.capacity) {
+                socket.emit('web-room:error', {
+                    code: 'ROOM_FULL',
+                    message: 'This room already has 4 participants.',
+                    roomId: sanitizedRoomId,
+                });
+                return;
+            }
+
+            const participant = {
+                id: socket.id,
+                name: sanitizedName,
+                isAudioEnabled: true,
+                isVideoEnabled: true,
+                isScreenSharing: false,
+                joinedAt: Date.now(),
+            };
+
+            room.participants[socket.id] = participant;
+            room.socketToParticipant[socket.id] = socket.id;
+            activeUsers[socket.id] = {
+                ...(activeUsers[socket.id] || {}),
+                webRoomId: sanitizedRoomId,
+                lastActivity: new Date(),
+            };
+
+            socket.join(sanitizedRoomId);
+            socket.emit('web-room:joined', {
+                roomId: sanitizedRoomId,
+                participantId: socket.id,
+                participants: Object.values(room.participants),
+                capacity: room.capacity,
+            });
+
+            socket.to(sanitizedRoomId).emit('web-room:user-joined', {
+                roomId: sanitizedRoomId,
+                participant,
+                timestamp: Date.now(),
+            });
+            emitWebRoomState(sanitizedRoomId);
+        });
+
+        socket.on('web-room:signal', ({ roomId, to, description, candidate }) => {
+            if (!roomId || !to || (!description && !candidate)) {
+                socket.emit('web-room:error', {
+                    code: 'INVALID_SIGNAL',
+                    message: 'roomId, to and signaling payload are required.',
+                });
+                return;
+            }
+
+            io.to(to).emit('web-room:signal', {
+                roomId,
+                from: socket.id,
+                description,
+                candidate,
+            });
+        });
+
+        socket.on('web-room:media-state', ({ roomId, isAudioEnabled, isVideoEnabled, isScreenSharing }) => {
+            if (!roomId || !webRooms[roomId] || !webRooms[roomId].participants[socket.id]) {
+                return;
+            }
+
+            const participant = webRooms[roomId].participants[socket.id];
+            if (typeof isAudioEnabled === 'boolean') {
+                participant.isAudioEnabled = isAudioEnabled;
+            }
+            if (typeof isVideoEnabled === 'boolean') {
+                participant.isVideoEnabled = isVideoEnabled;
+            }
+            if (typeof isScreenSharing === 'boolean') {
+                participant.isScreenSharing = isScreenSharing;
+            }
+
+            io.to(roomId).emit('web-room:media-state', {
+                roomId,
+                participantId: socket.id,
+                isAudioEnabled: participant.isAudioEnabled,
+                isVideoEnabled: participant.isVideoEnabled,
+                isScreenSharing: participant.isScreenSharing,
+            });
+            emitWebRoomState(roomId);
+        });
+
+        socket.on('web-room:leave', ({ roomId }) => {
+            const targetRoomId = roomId || activeUsers[socket.id]?.webRoomId;
+            if (!targetRoomId) {
+                return;
+            }
+
+            removeParticipantFromWebRoom(socket.id);
+            socket.leave(targetRoomId);
+            socket.emit('web-room:left', {
+                roomId: targetRoomId,
+                participantId: socket.id,
+            });
+        });
+
         // User status check
         socket.on('check_user', () => {
             socket.emit('get_user', users);
@@ -930,6 +1108,8 @@ socket.on('end_call', async (data) => {
         socket.on('disconnect', async () => {
             console.log('🔌 User disconnected:', socket.id);
             
+            mediasoupRoomManager.handleDisconnect(socket.id);
+            removeParticipantFromWebRoom(socket.id);
             const userId = removeSocketPresence(socket.id);
             await callingRepository.clearSocket(socket.id);
             

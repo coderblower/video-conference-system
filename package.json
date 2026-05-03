@@ -4,6 +4,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node server_entry.js",
+    "dev": "nodemon server_entry.js",
+    "client:dev": "npm --prefix frontend/my-react-app run dev",
+    "client:build": "npm --prefix frontend/my-react-app run build",
     "migrate": "npx sequelize-cli db:migrate --config config/config.json",
     "migrate:undo": "npx sequelize-cli db:migrate:undo --config config/config.json",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -21,6 +24,7 @@
     "express-session": "^1.18.1",
     "https": "^1.0.0",
     "jsonwebtoken": "^9.0.2",
+    "mediasoup": "^3.15.6",
     "morgan": "^1.10.0",
     "mysql2": "^3.11.4",
     "nodemon": "^3.1.7",

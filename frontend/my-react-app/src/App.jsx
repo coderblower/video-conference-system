@@ -1,23 +1,19 @@
-import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import Main from "./Layout/Main";
 import Welcome from "./page/Welcome";
 import Registration from "./page/Registration";
 import Login from "./page/Login";
-
 import Room from "./page/Room";
-
 
 const App = () => {
     return (
-        <Router>
+        <Router basename={import.meta.env.BASE_URL}>
             <Routes>
-                {/* The Main layout will wrap these pages */}
                 <Route path="/" element={<Main />}>
-                  <Route index element={<Welcome />} />
-                  <Route path="room" element={<Room />} />
-                  <Route path="registration" element={<Registration />} />
-                  <Route path="login" element={<Login />} />
+                    <Route index element={<Welcome />} />
+                    <Route path="room/:roomId" element={<Room />} />
+                    <Route path="registration" element={<Registration />} />
+                    <Route path="login" element={<Login />} />
                 </Route>
             </Routes>
         </Router>

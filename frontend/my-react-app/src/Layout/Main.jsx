@@ -1,24 +1,22 @@
-import React from "react";
 import { Outlet } from "react-router-dom";
-import ProfileMenu from "../components/ProfileMenu";
 
 const Main = () => {
     return (
-        <div className="min-h-screen flex flex-col">
-            {/* Header */}
-            <header className="flex bg-gray-800 text-white p-4 justify-between">
-                <h1 className="text-2xl font-bold">সহজ কথা</h1>
-                <ProfileMenu />
+        <div className="app-shell">
+            <header className="app-header">
+                <div>
+                    <p className="app-header-mark">Video Calling Node.js</p>
+                    <h1>Meet-style Web Room</h1>
+                </div>
+                <span className="app-header-badge">WebRTC x Socket.IO</span>
             </header>
 
-            {/* Main content section */}
-            <main className="flex-1 p-6">
-                <Outlet /> {/* Nested content rendered here */}
+            <main className="app-content">
+                <Outlet />
             </main>
 
-            {/* Footer */}
-            <footer className="bg-gray-800 text-white p-4 text-center">
-                <p>&copy; {new Date().getFullYear()} Versatilo Group</p>
+            <footer className="app-footer">
+                <p>Join with `roomId` / key. Maximum 4 web participants.</p>
             </footer>
         </div>
     );

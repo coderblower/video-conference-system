@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const http = require('http');
+const path = require('path');
 const express = require('express');
 const fs = require('fs');
 const passport = require('passport');
@@ -12,6 +13,8 @@ const cors = require('cors');
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
+const publicDir = path.join(__dirname, 'public');
+const meetBuildDir = path.join(publicDir, 'meet');
 app.use(cors());
 // Connect to the database
 dbConnect();
@@ -23,7 +26,8 @@ initializeFirebase().catch((error) => {
 require('./config/passport')(passport);
 
 // Serve static files
-app.use(express.static('public'));
+app.use(express.static(publicDir));
+app.use('/meet', express.static(meetBuildDir));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,6 +43,10 @@ const callingRoutes = require('./routes/callingRoutes.js');
 app.use('/api', authRoutes);
 app.use('/api/calling', callingRoutes);
 // app.use('/api/room', roomRoutes);
+
+app.get('/meet/*', (req, res) => {
+    res.sendFile(path.join(meetBuildDir, 'index.html'));
+});
 
 // Create HTTPS server and set up WebSocket
 const server = http.createServer(app);

@@ -6,9 +6,14 @@ dotenv.config();
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/meet/",
 
   define: {
     "env": process.env, // Include environment variables
+  },
+  build: {
+    outDir: "../../public/meet",
+    emptyOutDir: true,
   },
   server: {
     https: {
