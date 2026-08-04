@@ -174,16 +174,7 @@ async function releaseDeviceOwnership(payload = {}) {
   await Promise.all(
     conflictingDevices.map(async (device) => {
       affectedUserIds.add(device.userId);
-      await device.update({
-        socketId: null,
-        isOnline: false,
-        isLoggedIn: false,
-        isPushEnabled: false,
-        fcmToken: null,
-        voipToken: null,
-        lastSeenAt: new Date(),
-        lastLogoutAt: new Date(),
-      });
+      await device.destroy();
     })
   );
 
@@ -281,19 +272,7 @@ async function logoutDevice(payload = {}) {
     where.deviceId = deviceId;
   }
 
-  await CallDevice.update(
-    {
-      socketId: null,
-      isOnline: false,
-      isLoggedIn: false,
-      isPushEnabled: false,
-      fcmToken: null,
-      voipToken: null,
-      lastSeenAt: new Date(),
-      lastLogoutAt: new Date(),
-    },
-    { where }
-  );
+  await CallDevice.destroy({ where });
 
   await syncPresence(userId);
 }

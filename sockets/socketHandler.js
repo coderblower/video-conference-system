@@ -852,6 +852,23 @@ socket.on('end_call', async (data) => {
             }
         });
 
+        socket.on('send_friend_request', (data) => {
+            try {
+                const { to, from } = data;
+                if (!to) return;
+                
+                getUserSockets(to).forEach((socketId) => {
+                    io.to(socketId).emit('friend_request_received', {
+                        from: from || socket.userId,
+                        timestamp: Date.now()
+                    });
+                });
+                console.log(`👤 Friend request sent to ${to}`);
+            } catch (error) {
+                console.error('❌ Error sending friend request:', error);
+            }
+        });
+
         // Legacy call handling
         socket.on('make_call', (data) => {
             const { room, to, id } = data;
