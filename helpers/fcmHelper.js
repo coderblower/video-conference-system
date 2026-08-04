@@ -3,11 +3,17 @@ const serviceAccount = require("../secrets/auth.json");
 const callingRepository = require("../services/callingRepository");
 
 // Initialize Firebase Admin SDK only once
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: serviceAccount.project_id
-  });
+try {
+  if (!admin.apps?.length && admin.initializeApp) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.project_id
+    });
+  }
+} catch (error) {
+  if (error.code !== 'app/duplicate-app') {
+    console.error('Firebase initialization error:', error);
+  }
 }
 
 // Track available services
