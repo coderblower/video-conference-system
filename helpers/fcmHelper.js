@@ -1,4 +1,6 @@
 const admin = require("firebase-admin");
+const { getMessaging } = require("firebase-admin/messaging");
+const { getAuth } = require("firebase-admin/auth");
 const serviceAccount = require("../secrets/auth.json");
 const callingRepository = require("../services/callingRepository");
 
@@ -28,7 +30,7 @@ function ensureMessagingAvailable() {
   }
 
   try {
-    admin.messaging();
+    getMessaging();
     firebaseServices.messaging = true;
     return true;
   } catch (error) {
@@ -40,6 +42,10 @@ function ensureMessagingAvailable() {
 /**
  * Test Firebase connection
  */
+
+/**
+ * Test Firebase connection
+ */
 async function testFirebaseConnection() {
   console.log('   🔍 Testing Firebase services...\n');
   console.log(`   📋 Project: ${serviceAccount.project_id}`);
@@ -47,7 +53,7 @@ async function testFirebaseConnection() {
 
   // Test Authentication (optional)
   try {
-    await admin.auth().listUsers(1);
+    await getAuth().listUsers(1);
     firebaseServices.auth = true;
     console.log("   ✅ Authentication: Enabled");
   } catch (error) {
@@ -61,7 +67,7 @@ async function testFirebaseConnection() {
 
   // Test Cloud Messaging
   try {
-    const messaging = admin.messaging();
+    const messaging = getMessaging();
     firebaseServices.messaging = true;
     console.log("   ✅ Cloud Messaging: Ready");
   } catch (error) {
@@ -161,7 +167,7 @@ async function sendFCM(token, title, body, data = {}) {
   };
 
   try {
-    const response = await admin.messaging().sendEachForMulticast(payload);
+    const response = await getMessaging().sendEachForMulticast(payload);
     console.log(`✅ FCM sent successfully to ${response.successCount}/${tokens.length} device(s)`);
     return response;
   } catch (error) {
@@ -216,7 +222,7 @@ async function sendDataOnlyMessage(tokens, data = {}) {
   };
 
   try {
-    const response = await admin.messaging().sendEachForMulticast(payload);
+    const response = await getMessaging().sendEachForMulticast(payload);
     console.log(`✅ Data-only FCM sent to ${tokens.length} device(s)`);
     return response;
   } catch (error) {
