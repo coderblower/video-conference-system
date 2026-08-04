@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getAuth } = require("firebase-admin/auth");
 const serviceAccount = require("../secrets/auth.json");
@@ -6,9 +7,9 @@ const callingRepository = require("../services/callingRepository");
 
 // Initialize Firebase Admin SDK only once
 try {
-  if (!admin.apps?.length && admin.initializeApp) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert(serviceAccount),
       projectId: serviceAccount.project_id
     });
   }
