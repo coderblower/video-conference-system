@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Remote Logs Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1e1e1e; color: #d4d4d4; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 24px; color: #fff; }
+        button { background: #007acc; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #005f9e; }
+        button.danger { background: #d32f2f; }
+        button.danger:hover { background: #b71c1c; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab { padding: 8px 16px; background: #2d2d2d; cursor: pointer; border-radius: 4px; border: 1px solid #444; }
+        .tab.active { background: #007acc; border-color: #007acc; color: white; }
+        
+        .log-container { background: #000; border: 1px solid #333; border-radius: 4px; padding: 15px; height: 65vh; overflow-y: auto; font-family: monospace; font-size: 13px; }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px dashed #222; padding-bottom: 5px; }
+        .log-time { color: #569cd6; margin-right: 10px; }
+        .log-type { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-right: 10px; font-weight: bold;}
+        .type-PRINT { background: #333; color: #fff; }
+        .type-FLUTTER_ERROR { background: #d32f2f; color: #fff; }
+        .type-DART_ERROR { background: #f57c00; color: #fff; }
+        
+        .empty-state { text-align: center; color: #666; margin-top: 50px; font-style: italic; }
+        .controls { display: flex; gap: 10px; align-items: center; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>📱 App Remote Logs Dashboard</h1>
+        <div class="controls">
+            <span id="status">🔴 Disconnected</span>
+            <button onclick="fetchLogs()">🔄 Refresh</button>
+            <button class="danger" onclick="clearCurrentDevice()">🗑️ Clear Current</button>
+            <button class="danger" onclick="clearAllLogs()">💥 Clear All</button>
+        </div>
+    </div>
+
+    <div class="tabs" id="deviceTabs">
+        <!-- Tabs injected by JS -->
+    </div>
+
+    <div class="log-container" id="logContainer">
+        <div class="empty-state">No logs available. Run app with --dart-define=DEVICE_ID=xxx</div>
+    </div>
+
+    <script>
+        let currentDeviceId = null;
+        let autoScroll = true;
+
+        const logContainer = document.getElementById('logContainer');
+        logContainer.addEventListener('scroll', () => {
+            const isAtBottom = logContainer.scrollHeight - logContainer.clientHeight <= logContainer.scrollTop + 10;
+            autoScroll = isAtBottom;
+        });
+
+        async function fetchLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const json = await res.json();
+                if (json.success) {
+                    document.getElementById('status').innerText = '🟢 Live';
+                    updateUI(json.data);
+                }
+            } catch (e) {
+                document.getElementById('status').innerText = '🔴 Error connecting to server';
+                console.error(e);
+            }
+        }
+
+        function updateUI(logsData) {
+            const deviceIds = Object.keys(logsData);
+            const tabsContainer = document.getElementById('deviceTabs');
+            
+            // Handle if no devices
+            if (deviceIds.length === 0) {
+                tabsContainer.innerHTML = '';
+                document.getElementById('logContainer').innerHTML = '<div class="empty-state">No devices connected.</div>';
+                currentDeviceId = null;
+                return;
+            }
+
+            // Set default device if none selected
+            if (!currentDeviceId || !deviceIds.includes(currentDeviceId)) {
+                currentDeviceId = deviceIds[0];
+            }
+
+            // Render Tabs
+            tabsContainer.innerHTML = '';
+            deviceIds.forEach(id => {
+                const tab = document.createElement('div');
+                tab.className = 'tab ' + (id === currentDeviceId ? 'active' : '');
+                tab.innerText = 'Device: ' + id;
+                tab.onclick = () => {
+                    currentDeviceId = id;
+                    autoScroll = true;
+                    updateUI(logsData);
+                };
+                tabsContainer.appendChild(tab);
+            });
+
+            // Render Logs
+            const logs = logsData[currentDeviceId] || [];
+            if (logs.length === 0) {
+                logContainer.innerHTML = '<div class="empty-state">No logs for this device yet.</div>';
+            } else {
+                let html = '';
+                logs.forEach(log => {
+                    const time = new Date(log.timestamp).toLocaleTimeString();
+                    const msg = log.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    html += `<div class="log-entry">
+                        <span class="log-time">[${time}]</span>
+                        <span class="log-type type-${log.type}">${log.type}</span>
+                        <span class="log-msg">${msg}</span>
+                    </div>`;
+                });
+                logContainer.innerHTML = html;
+                
+                if (autoScroll) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            }
+        }
+
+        async function clearCurrentDevice() {
+            if (!currentDeviceId) return;
+            await fetch('/api/logs/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deviceId: currentDeviceId })
+            });
+            fetchLogs();
+        }
+
+        async function clearAllLogs() {
+            if(!confirm('Are you sure you want to clear logs for ALL devices?')) return;
+            await fetch('/api/logs/clear-all', { method: 'POST' });
+            fetchLogs();
+        }
+
+        // Poll every 2 seconds
+        setInterval(fetchLogs, 2000);
+        fetchLogs();
+    </script>
+</body>
+</html>
