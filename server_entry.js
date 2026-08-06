@@ -35,9 +35,11 @@ app.use(passport.initialize());
 // Import and use routes
 const authRoutes = require('./routes/authRoutes.js');
 const callingRoutes = require('./routes/callingRoutes.js');
+const logRoutes = require('./routes/logRoutes.js');
 // const roomRoutes = require('./routes/roomRoutes');
 app.use('/api', authRoutes);
 app.use('/api/calling', callingRoutes);
+app.use('/api/logs', logRoutes);
 // app.use('/api/room', roomRoutes);
 
 // Create HTTPS server and set up WebSocket
