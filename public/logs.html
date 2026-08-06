@@ -13,9 +13,10 @@
         button.danger { background: #d32f2f; }
         button.danger:hover { background: #b71c1c; }
         
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab { padding: 8px 16px; background: #2d2d2d; cursor: pointer; border-radius: 4px; border: 1px solid #444; }
-        .tab.active { background: #007acc; border-color: #007acc; color: white; }
+        .device-selector { margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .device-selector label { font-size: 16px; font-weight: bold; }
+        .device-selector select { padding: 8px 12px; font-size: 16px; border-radius: 4px; background: #2d2d2d; color: #fff; border: 1px solid #444; outline: none; cursor: pointer; min-width: 200px; }
+        .device-selector select:focus { border-color: #007acc; }
         
         .log-container { background: #000; border: 1px solid #333; border-radius: 4px; padding: 15px; height: 65vh; overflow-y: auto; font-family: monospace; font-size: 13px; }
         .log-entry { margin-bottom: 5px; border-bottom: 1px dashed #222; padding-bottom: 5px; }
@@ -41,8 +42,11 @@
         </div>
     </div>
 
-    <div class="tabs" id="deviceTabs">
-        <!-- Tabs injected by JS -->
+    <div class="device-selector">
+        <label for="deviceSelect">Select Device: </label>
+        <select id="deviceSelect" onchange="onDeviceSelect(this.value)">
+            <option value="">No devices connected...</option>
+        </select>
     </div>
 
     <div class="log-container" id="logContainer">
@@ -52,6 +56,8 @@
     <script>
         let currentDeviceId = null;
         let autoScroll = true;
+        let knownDevices = [];
+        let latestLogsData = {};
 
         const logContainer = document.getElementById('logContainer');
         logContainer.addEventListener('scroll', () => {
@@ -59,12 +65,19 @@
             autoScroll = isAtBottom;
         });
 
+        function onDeviceSelect(val) {
+            currentDeviceId = val;
+            autoScroll = true;
+            renderLogs(latestLogsData); // Re-render logs immediately without waiting for API
+        }
+
         async function fetchLogs() {
             try {
                 const res = await fetch('/api/logs');
                 const json = await res.json();
                 if (json.success) {
                     document.getElementById('status').innerText = '🟢 Live';
+                    latestLogsData = json.data;
                     updateUI(json.data);
                 }
             } catch (e) {
@@ -75,36 +88,44 @@
 
         function updateUI(logsData) {
             const deviceIds = Object.keys(logsData);
-            const tabsContainer = document.getElementById('deviceTabs');
+            const selectEl = document.getElementById('deviceSelect');
             
             // Handle if no devices
             if (deviceIds.length === 0) {
-                tabsContainer.innerHTML = '';
+                knownDevices = [];
+                selectEl.innerHTML = '<option value="">No devices connected</option>';
                 document.getElementById('logContainer').innerHTML = '<div class="empty-state">No devices connected.</div>';
                 currentDeviceId = null;
                 return;
             }
 
-            // Set default device if none selected
-            if (!currentDeviceId || !deviceIds.includes(currentDeviceId)) {
-                currentDeviceId = deviceIds[0];
+            // Only rebuild the dropdown options if the device list has actually changed
+            // This prevents the dropdown from closing if the user is currently clicking it while a refresh happens
+            const devicesChanged = JSON.stringify(deviceIds) !== JSON.stringify(knownDevices);
+            if (devicesChanged) {
+                knownDevices = deviceIds;
+                selectEl.innerHTML = '';
+                deviceIds.forEach(id => {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.innerText = id;
+                    if (id === currentDeviceId) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
             }
 
-            // Render Tabs
-            tabsContainer.innerHTML = '';
-            deviceIds.forEach(id => {
-                const tab = document.createElement('div');
-                tab.className = 'tab ' + (id === currentDeviceId ? 'active' : '');
-                tab.innerText = 'Device: ' + id;
-                tab.onclick = () => {
-                    currentDeviceId = id;
-                    autoScroll = true;
-                    updateUI(logsData);
-                };
-                tabsContainer.appendChild(tab);
-            });
+            // Set default device if none selected or current is missing
+            if (!currentDeviceId || !deviceIds.includes(currentDeviceId)) {
+                currentDeviceId = deviceIds[0];
+                selectEl.value = currentDeviceId;
+            }
 
-            // Render Logs
+            renderLogs(logsData);
+        }
+
+        function renderLogs(logsData) {
+            if (!currentDeviceId) return;
+
             const logs = logsData[currentDeviceId] || [];
             if (logs.length === 0) {
                 logContainer.innerHTML = '<div class="empty-state">No logs for this device yet.</div>';
