@@ -19,9 +19,12 @@ exports.registerDevice = async (req, res) => {
   try {
     const device = await callingRepository.registerDevice(req.body || {});
     if (device && Array.isArray(device.deactivatedDevices)) {
+      const currentFcmToken = req.body?.fcmToken ? String(req.body.fcmToken).trim() : null;
+      const currentDeviceId = req.body?.deviceId ? String(req.body.deviceId).trim() : null;
       const oldFcmTokens = device.deactivatedDevices
+        .filter((d) => !currentDeviceId || String(d.deviceId).trim() !== currentDeviceId)
         .map((d) => d.fcmToken)
-        .filter((t) => typeof t === 'string' && t.trim());
+        .filter((t) => typeof t === 'string' && t.trim() && t.trim() !== currentFcmToken);
       if (oldFcmTokens.length > 0) {
         const { sendDataOnlyMessage } = require('../helpers/fcmHelper');
         sendDataOnlyMessage(oldFcmTokens, {

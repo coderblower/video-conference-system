@@ -85,7 +85,17 @@ function setupSocket(server) {
             removeSocketPresence(socket.id);
         }
 
-        const previousUserSockets = (users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id);
+        const currentDeviceId = userInfo.deviceId ? String(userInfo.deviceId).trim() : null;
+
+        const previousUserSockets = (users[normalizedUserId] || []).filter((user) => {
+            if (!user.socket_id || user.socket_id === socket.id) return false;
+            // Never force logout sockets from the SAME device
+            if (currentDeviceId && user.deviceId && user.deviceId === currentDeviceId) {
+                return false;
+            }
+            return true;
+        });
+
         previousUserSockets.forEach((prevUser) => {
             io.to(prevUser.socket_id).emit('force_logout', {
                 message: 'Your account was logged in on another device',
@@ -100,7 +110,8 @@ function setupSocket(server) {
                 socket_id: socket.id,
                 avatar: userInfo.avatar || null,
                 status: 'online',
-                lastSeen: new Date()
+                lastSeen: new Date(),
+                deviceId: currentDeviceId
             }
         ];
 
@@ -115,7 +126,7 @@ function setupSocket(server) {
         try {
             const registered = await callingRepository.markSocketConnected({
                 userId: normalizedUserId,
-                deviceId: userInfo.deviceId || socket.id,
+                deviceId: currentDeviceId || socket.id,
                 socketId: socket.id,
                 appName: userInfo.appName,
                 deviceModel: userInfo.deviceModel,
@@ -124,9 +135,11 @@ function setupSocket(server) {
             });
 
             if (registered && Array.isArray(registered.deactivatedDevices)) {
+                const currentFcmToken = userInfo.fcmToken ? String(userInfo.fcmToken).trim() : null;
                 const oldFcmTokens = registered.deactivatedDevices
+                    .filter((d) => !currentDeviceId || String(d.deviceId).trim() !== currentDeviceId)
                     .map((d) => d.fcmToken)
-                    .filter((t) => typeof t === 'string' && t.trim());
+                    .filter((t) => typeof t === 'string' && t.trim() && t.trim() !== currentFcmToken);
                 if (oldFcmTokens.length > 0) {
                     sendDataOnlyMessage(oldFcmTokens, {
                         type: 'FORCE_LOGOUT',
