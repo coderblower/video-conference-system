@@ -18,6 +18,19 @@ function parseUserIds(rawUserIds) {
 exports.registerDevice = async (req, res) => {
   try {
     const device = await callingRepository.registerDevice(req.body || {});
+    if (device && Array.isArray(device.deactivatedDevices)) {
+      const oldFcmTokens = device.deactivatedDevices
+        .map((d) => d.fcmToken)
+        .filter((t) => typeof t === 'string' && t.trim());
+      if (oldFcmTokens.length > 0) {
+        const { sendDataOnlyMessage } = require('../helpers/fcmHelper');
+        sendDataOnlyMessage(oldFcmTokens, {
+          type: 'FORCE_LOGOUT',
+          userId: device.userId,
+          reason: 'logged_in_on_another_device',
+        }).catch((err) => console.error('⚠️ Failed to send force logout push:', err.message));
+      }
+    }
     res.status(200).json({
       success: true,
       device,

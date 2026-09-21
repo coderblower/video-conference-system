@@ -191,6 +191,41 @@ async function registerDevice(payload = {}) {
 
   await releaseDeviceOwnership(payload);
 
+  // Single active device per user policy:
+  // Invalidate any other active devices for this user
+  const conflictingUserDevices = await CallDevice.findAll({
+    where: {
+      userId,
+      deviceId: {
+        [Op.ne]: deviceId,
+      },
+      isLoggedIn: true,
+    },
+  });
+
+  if (conflictingUserDevices.length > 0) {
+    await CallDevice.update(
+      {
+        socketId: null,
+        isOnline: false,
+        isLoggedIn: false,
+        isPushEnabled: false,
+        fcmToken: null,
+        voipToken: null,
+        lastSeenAt: new Date(),
+        lastLogoutAt: new Date(),
+      },
+      {
+        where: {
+          userId,
+          deviceId: {
+            [Op.ne]: deviceId,
+          },
+        },
+      }
+    );
+  }
+
   const existing = await CallDevice.findOne({
     where: { userId, deviceId },
   });
@@ -229,7 +264,9 @@ async function registerDevice(payload = {}) {
   }
 
   await syncPresence(userId, payload.userInfo);
-  return device.reload();
+  const reloaded = await device.reload();
+  reloaded.deactivatedDevices = conflictingUserDevices;
+  return reloaded;
 }
 
 async function markSocketConnected(payload = {}) {

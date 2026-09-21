@@ -343,6 +343,7 @@ module.exports = {
   sendCallNotification, 
   sendDataOnlyCallNotification,
   sendCallLifecycleNotification,
+  sendDataOnlyMessage,
   initializeFirebase,
   testFirebaseConnection,
   clearFirebaseData,

@@ -2,7 +2,8 @@ const {Server} = require('socket.io');
 const {
     sendCallNotification,
     sendDataOnlyCallNotification,
-    sendCallLifecycleNotification
+    sendCallLifecycleNotification,
+    sendDataOnlyMessage
 } = require('../helpers/fcmHelper');
 const callingRepository = require('../services/callingRepository');
 
@@ -84,8 +85,16 @@ function setupSocket(server) {
             removeSocketPresence(socket.id);
         }
 
+        const previousUserSockets = (users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id);
+        previousUserSockets.forEach((prevUser) => {
+            io.to(prevUser.socket_id).emit('force_logout', {
+                message: 'Your account was logged in on another device',
+                userId: normalizedUserId
+            });
+        });
+
+        // Enforce single active socket per user
         users[normalizedUserId] = [
-            ...(users[normalizedUserId] || []).filter((user) => user.socket_id && user.socket_id !== socket.id),
             {
                 name: `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim(),
                 socket_id: socket.id,
@@ -104,7 +113,7 @@ function setupSocket(server) {
         };
 
         try {
-            await callingRepository.markSocketConnected({
+            const registered = await callingRepository.markSocketConnected({
                 userId: normalizedUserId,
                 deviceId: userInfo.deviceId || socket.id,
                 socketId: socket.id,
@@ -113,6 +122,19 @@ function setupSocket(server) {
                 devicePlatform: userInfo.devicePlatform,
                 userInfo,
             });
+
+            if (registered && Array.isArray(registered.deactivatedDevices)) {
+                const oldFcmTokens = registered.deactivatedDevices
+                    .map((d) => d.fcmToken)
+                    .filter((t) => typeof t === 'string' && t.trim());
+                if (oldFcmTokens.length > 0) {
+                    sendDataOnlyMessage(oldFcmTokens, {
+                        type: 'FORCE_LOGOUT',
+                        userId: normalizedUserId,
+                        reason: 'logged_in_on_another_device'
+                    }).catch((err) => console.error('⚠️ Failed to send force logout push:', err.message));
+                }
+            }
         } catch (error) {
             console.error('⚠️  Failed to persist socket presence:', error.message);
         }
@@ -530,6 +552,18 @@ socket.on('end_call', async (data) => {
                                 acceptedBy: normalizedUserId
                             });
                         });
+
+                        // Notify other devices of callee to cancel ringing
+                        const otherCalleeSockets = getUserSockets(activeCalls[roomId].calleeId).filter(sId => sId !== socket.id);
+                        otherCalleeSockets.forEach(socketId => {
+                            io.to(socketId).emit('call_cancelled', {
+                                roomId,
+                                reason: 'answered_elsewhere'
+                            });
+                        });
+                        sendCallLifecycleNotification(activeCalls[roomId].calleeId, 'CALL_CANCELLED', roomId, {
+                            reason: 'answered_elsewhere'
+                        }).catch(e => console.error('⚠️ Failed to send answered_elsewhere notification:', e.message));
                     } else if (status === 'declined') {
                         await cleanupCall(roomId, {
                             status: 'declined',
@@ -603,6 +637,18 @@ socket.on('end_call', async (data) => {
                                 acceptedBy: normalizedUserId
                             });
                         });
+
+                        // Notify other devices of callee to cancel ringing
+                        const otherCalleeSockets = getUserSockets(activeCalls[roomId].calleeId).filter(sId => sId !== socket.id);
+                        otherCalleeSockets.forEach((socketId) => {
+                            io.to(socketId).emit('call_cancelled', {
+                                roomId,
+                                reason: 'answered_elsewhere'
+                            });
+                        });
+                        sendCallLifecycleNotification(activeCalls[roomId].calleeId, 'CALL_CANCELLED', roomId, {
+                            reason: 'answered_elsewhere'
+                        }).catch((e) => console.error('⚠️ Failed to send answered_elsewhere notification:', e.message));
                     }
                 }
                 
