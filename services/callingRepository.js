@@ -101,9 +101,11 @@ async function syncPresence(userId, userInfo = {}) {
 
   const status = existingPresence?.currentCallRoomId
     ? 'busy'
-    : hasReachableDevice
+    : socketCount > 0
       ? 'online'
-      : 'offline';
+      : pushDeviceCount > 0
+        ? 'standby'
+        : 'offline';
 
   const values = {
     displayName,
@@ -552,15 +554,17 @@ async function listUserCallHistory(userId, limit = 30) {
 }
 
 async function getDashboardStats(extra = {}) {
-  const [availableUsers, onlineUsers, busyUsers] = await Promise.all([
+  const [availableUsers, onlineUsers, standbyUsers, busyUsers] = await Promise.all([
     UserPresence.count({ where: { isAvailable: true } }),
     UserPresence.count({ where: { status: 'online' } }),
+    UserPresence.count({ where: { status: 'standby' } }),
     UserPresence.count({ where: { status: 'busy' } }),
   ]);
 
   return {
     availableUsers,
     onlineUsers,
+    standbyUsers,
     busyUsers,
     activeCalls: extra.activeCallsCount || 0,
     connectedSockets: extra.connectedSockets || 0,

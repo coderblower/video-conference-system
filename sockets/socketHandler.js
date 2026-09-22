@@ -12,20 +12,36 @@ function setupSocket(server) {
         cors: {
             origin: "*",
             methods: ["GET", "POST"]
-        }
+        },
+        pingInterval: 10000,
+        pingTimeout: 5000
     });
 
-    // Store users, rooms, messages, and active calls
+    // Store users, rooms, messages, active calls, and recently ended calls
     const rooms = {};
     const messages = {};
     const activeUsers = {};
     const activeCalls = {};
     const activeCallTimeouts = {};
+    const recentlyEndedCalls = new Map(); // roomId -> { endedAt, reason, endedBy, status }
     let users = {};
     const CALL_RING_TIMEOUT_MS = Number(process.env.CALL_RING_TIMEOUT_MS || 30000);
 
     // Connection quality monitoring
     const connectionStats = {};
+
+    const isUserInCall = (userId) => {
+        const normalizedId = normalizeUserId(userId);
+        if (!normalizedId) return false;
+        return Object.values(activeCalls).some((call) => {
+            const isParticipant =
+                call.callerId === normalizedId ||
+                call.calleeId === normalizedId ||
+                (Array.isArray(call.participants) && call.participants.includes(normalizedId));
+            const isActive = ['initiating', 'calling', 'ringing', 'accepted'].includes(call.status);
+            return isParticipant && isActive;
+        });
+    };
 
     const normalizeUserId = (value) => {
         if (value === undefined || value === null || value === '') {
@@ -284,6 +300,18 @@ function setupSocket(server) {
             endedAt,
         });
 
+        recentlyEndedCalls.set(roomId, {
+            endedAt: Date.now(),
+            reason,
+            endedBy: options.endedBy || null,
+            status: payload.status,
+            callerId: call.callerId,
+            calleeId: call.calleeId,
+        });
+        setTimeout(() => {
+            recentlyEndedCalls.delete(roomId);
+        }, 60000);
+
         delete activeCalls[roomId];
         await emitDashboard();
     };
@@ -351,6 +379,7 @@ function setupSocket(server) {
                     roomId, 
                     callerName, 
                     callerAvatar,
+
                     callType = 'video'
                 } = data;
 
@@ -366,6 +395,45 @@ function setupSocket(server) {
                 if (!calleeId || !callerId || !roomId) {
                     socket.emit('call_error', { 
                         error: 'Missing required fields: calleeId, callerId, roomId' 
+                    });
+                    return;
+                }
+
+                // Check if callee is already on an active call
+                if (isUserInCall(calleeId)) {
+                    console.log(`⚠️ Callee ${calleeId} is already on another active call`);
+                    const busyPayload = {
+                        success: false,
+                        status: 'busy',
+                        reason: 'busy',
+                        message: 'User is already on another call',
+                        calleeId,
+                        callerId,
+                        roomId
+                    };
+                    socket.emit('call_busy', busyPayload);
+                    socket.emit('call_rejected', busyPayload);
+                    socket.emit('call_error', busyPayload);
+
+                    await callingRepository.upsertCallHistory(roomId, {
+                        callerId,
+                        calleeId,
+                        callerName,
+                        callType,
+                        status: 'busy',
+                        disconnectReason: 'user_busy',
+                        endedAt: new Date()
+                    });
+                    return;
+                }
+
+                // Check if caller is already on an active call
+                if (isUserInCall(callerId)) {
+                    console.log(`⚠️ Caller ${callerId} is already on another active call`);
+                    socket.emit('call_error', {
+                        error: 'You are already on another active call',
+                        reason: 'busy',
+                        roomId
                     });
                     return;
                 }
@@ -616,6 +684,28 @@ socket.on('end_call', async (data) => {
                 const normalizedUserId = normalizeUserId(userId);
                 
                 console.log(`👥 User ${userId} joining call room: ${roomId} as ${userType}`);
+
+                const call = activeCalls[roomId];
+                const recentlyEnded = recentlyEndedCalls.get(roomId);
+
+                if (!call) {
+                    console.log(`⚠️ Room ${roomId} is not active in activeCalls. Recently ended:`, Boolean(recentlyEnded));
+                    const endPayload = {
+                        roomId,
+                        status: 'ended',
+                        reason: recentlyEnded?.reason || 'call_already_ended',
+                        endedBy: recentlyEnded?.endedBy || null,
+                        timestamp: new Date().toISOString(),
+                        message: 'This call has already ended or was cancelled.'
+                    };
+                    socket.emit('call_ended', endPayload);
+                    socket.emit('call_error', {
+                        error: 'Call is no longer active or was cancelled',
+                        reason: 'call_already_ended',
+                        roomId
+                    });
+                    return;
+                }
                 
                 socket.join(roomId);
                 
@@ -812,6 +902,46 @@ socket.on('end_call', async (data) => {
                 }
 
                 const finalCallerName = callerName || 'Unknown Caller';
+
+                // Check if callee is already on an active call
+                if (isUserInCall(callee)) {
+                    console.log(`⚠️ Callee ${callee} is already on another active call`);
+                    const busyPayload = {
+                        success: false,
+                        status: 'busy',
+                        reason: 'busy',
+                        message: 'User is already on another call',
+                        calleeId: callee,
+                        callerId,
+                        roomId
+                    };
+                    socket.emit('call_busy', busyPayload);
+                    socket.emit('call_rejected', busyPayload);
+                    socket.emit('call_error', busyPayload);
+
+                    await callingRepository.upsertCallHistory(roomId, {
+                        callerId,
+                        calleeId: callee,
+                        callerName: finalCallerName,
+                        callType: callType || 'video',
+                        status: 'busy',
+                        disconnectReason: 'user_busy',
+                        endedAt: new Date()
+                    });
+                    return;
+                }
+
+                // Check if caller is already on an active call
+                if (isUserInCall(callerId)) {
+                    console.log(`⚠️ Caller ${callerId} is already on another active call`);
+                    socket.emit('call_error', {
+                        error: 'You are already on another active call',
+                        reason: 'busy',
+                        roomId
+                    });
+                    return;
+                }
+
                 cacheCallState(socket, {
                     callerId,
                     calleeId: callee,
