@@ -7,6 +7,12 @@ const {
 } = require('../helpers/fcmHelper');
 const callingRepository = require('../services/callingRepository');
 
+let ioInstance = null;
+
+function getIO() {
+    return ioInstance;
+}
+
 function setupSocket(server) {
     const io = new Server(server, {
         cors: {
@@ -16,6 +22,7 @@ function setupSocket(server) {
         pingInterval: 10000,
         pingTimeout: 5000
     });
+    ioInstance = io;
 
     // Store users, rooms, messages, active calls, and recently ended calls
     const rooms = {};
@@ -685,26 +692,35 @@ socket.on('end_call', async (data) => {
                 
                 console.log(`👥 User ${userId} joining call room: ${roomId} as ${userType}`);
 
-                const call = activeCalls[roomId];
+                let call = activeCalls[roomId];
                 const recentlyEnded = recentlyEndedCalls.get(roomId);
 
                 if (!call) {
-                    console.log(`⚠️ Room ${roomId} is not active in activeCalls. Recently ended:`, Boolean(recentlyEnded));
-                    const endPayload = {
-                        roomId,
-                        status: 'ended',
-                        reason: recentlyEnded?.reason || 'call_already_ended',
-                        endedBy: recentlyEnded?.endedBy || null,
-                        timestamp: new Date().toISOString(),
-                        message: 'This call has already ended or was cancelled.'
-                    };
-                    socket.emit('call_ended', endPayload);
-                    socket.emit('call_error', {
-                        error: 'Call is no longer active or was cancelled',
-                        reason: 'call_already_ended',
-                        roomId
-                    });
-                    return;
+                    if (userType === 'caller' && !recentlyEnded) {
+                        console.log(`ℹ️ Initializing room ${roomId} for joining caller ${userId}`);
+                        call = cacheCallState(socket, {
+                            callerId: userId,
+                            roomId,
+                            status: 'initiating'
+                        });
+                    } else {
+                        console.log(`⚠️ Room ${roomId} is not active in activeCalls. Recently ended:`, Boolean(recentlyEnded));
+                        const endPayload = {
+                            roomId,
+                            status: 'ended',
+                            reason: recentlyEnded?.reason || 'call_already_ended',
+                            endedBy: recentlyEnded?.endedBy || null,
+                            timestamp: new Date().toISOString(),
+                            message: 'This call has already ended or was cancelled.'
+                        };
+                        socket.emit('call_ended', endPayload);
+                        socket.emit('call_error', {
+                            error: 'Call is no longer active or was cancelled',
+                            reason: 'call_already_ended',
+                            roomId
+                        });
+                        return;
+                    }
                 }
                 
                 socket.join(roomId);
@@ -972,9 +988,6 @@ socket.on('end_call', async (data) => {
                         message: 'Call notification sent successfully'
                     });
 
-                    socket.emit('ringing_call', { roomId });
-                    
-                    
                     // Also emit to other user devices
                     userSockets.forEach(socketId => {
                         io.to(socketId).emit('incoming_call', { 
@@ -986,7 +999,6 @@ socket.on('end_call', async (data) => {
                             callType: callType || 'video'
                         });
                     });
-                    
                 } else {
                     socket.emit('fcm_error', {
                         error: 'Failed to send FCM notification',
@@ -1001,6 +1013,26 @@ socket.on('end_call', async (data) => {
                     error: 'Internal server error',
                     details: error.message
                 });
+            }
+        });
+
+        socket.on('callee_ringing', (data) => {
+            try {
+                const { roomId, calleeId } = data || {};
+                console.log(`🔔 Callee ringing event received for room: ${roomId}, calleeId: ${calleeId}`);
+                if (roomId) {
+                    if (activeCalls[roomId]) {
+                        activeCalls[roomId].status = 'ringing';
+                        activeCalls[roomId].updatedAt = new Date();
+                    }
+                    const activeCall = activeCalls[roomId];
+                    const callerId = activeCall?.callerId;
+                    const callerSocketId = activeCall?.callerSocketId;
+                    const callerSockets = getUserSockets(callerId, callerSocketId);
+                    callerSockets.forEach(sId => io.to(sId).emit('ringing_call', { roomId }));
+                }
+            } catch (error) {
+                console.error('❌ Error handling callee_ringing:', error);
             }
         });
 
@@ -1212,4 +1244,4 @@ function analyzeConnectionQuality(stats) {
 
 
 
-module.exports = { setupSocket };
+module.exports = { setupSocket, getIO };

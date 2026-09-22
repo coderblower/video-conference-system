@@ -8,5 +8,6 @@ router.post('/devices/logout', controller.logoutDevice);
 router.get('/presence', controller.getPresence);
 router.get('/history/:userId', controller.getCallHistory);
 router.get('/dashboard', controller.getDashboard);
+router.post('/ringing', controller.reportRinging);
 
 module.exports = router;

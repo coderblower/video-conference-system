@@ -107,3 +107,21 @@ exports.getDashboard = async (req, res) => {
     });
   }
 };
+
+exports.reportRinging = async (req, res) => {
+  try {
+    const { roomId, calleeId } = req.body || {};
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId is required' });
+    }
+    const { getIO } = require('../sockets/socketHandler');
+    const io = getIO ? getIO() : null;
+    if (io) {
+      io.to(roomId).emit('ringing_call', { roomId, calleeId });
+    }
+    return res.status(200).json({ success: true, message: 'Ringing reported' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
