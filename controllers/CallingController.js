@@ -114,12 +114,65 @@ exports.reportRinging = async (req, res) => {
     if (!roomId) {
       return res.status(400).json({ success: false, message: 'roomId is required' });
     }
-    const { getIO } = require('../sockets/socketHandler');
-    const io = getIO ? getIO() : null;
-    if (io) {
-      io.to(roomId).emit('ringing_call', { roomId, calleeId });
+    const { handleExternalRinging } = require('../sockets/socketHandler');
+    const result = await handleExternalRinging({ roomId, calleeId });
+    return res.status(200).json(result || { success: true, message: 'Ringing reported' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.reportDecline = async (req, res) => {
+  try {
+    const { roomId, callerId, calleeId } = req.body || {};
+    if (!roomId && !callerId && !calleeId) {
+      return res.status(400).json({ success: false, message: 'roomId or callerId/calleeId is required' });
     }
-    return res.status(200).json({ success: true, message: 'Ringing reported' });
+    const { handleExternalDecline } = require('../sockets/socketHandler');
+    const result = await handleExternalDecline({ roomId, callerId, calleeId });
+    return res.status(200).json(result || { success: true, message: 'Call declined' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.reportAccept = async (req, res) => {
+  try {
+    const { roomId, calleeId } = req.body || {};
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId is required' });
+    }
+    const { handleExternalAccept } = require('../sockets/socketHandler');
+    const result = await handleExternalAccept({ roomId, calleeId });
+    return res.status(200).json(result || { success: true, message: 'Call accepted' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.reportTimeout = async (req, res) => {
+  try {
+    const { roomId, calleeId } = req.body || {};
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId is required' });
+    }
+    const { handleExternalTimeout } = require('../sockets/socketHandler');
+    const result = await handleExternalTimeout({ roomId, calleeId });
+    return res.status(200).json(result || { success: true, message: 'Call timed out' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getCallStatus = async (req, res) => {
+  try {
+    const roomId = req.params?.roomId || req.query?.roomId;
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId is required' });
+    }
+    const { getExternalCallStatus } = require('../sockets/socketHandler');
+    const statusData = getExternalCallStatus(roomId);
+    return res.status(200).json({ success: true, ...statusData });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

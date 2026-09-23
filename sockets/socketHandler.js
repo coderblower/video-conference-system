@@ -9,6 +9,14 @@ const callingRepository = require('../services/callingRepository');
 
 let ioInstance = null;
 
+const externalHandlers = {
+    handleExternalRinging: null,
+    handleExternalDecline: null,
+    handleExternalAccept: null,
+    handleExternalTimeout: null,
+    getExternalCallStatus: null,
+};
+
 function getIO() {
     return ioInstance;
 }
@@ -32,7 +40,7 @@ function setupSocket(server) {
     const activeCallTimeouts = {};
     const recentlyEndedCalls = new Map(); // roomId -> { endedAt, reason, endedBy, status }
     let users = {};
-    const CALL_RING_TIMEOUT_MS = Number(process.env.CALL_RING_TIMEOUT_MS || 30000);
+    const CALL_RING_TIMEOUT_MS = Number(process.env.CALL_RING_TIMEOUT_MS || 60000);
 
     // Connection quality monitoring
     const connectionStats = {};
@@ -323,8 +331,9 @@ function setupSocket(server) {
         await emitDashboard();
     };
 
-    const scheduleRingTimeout = (roomId) => {
+    const scheduleRingTimeout = (roomId, customTimeoutMs = null) => {
         clearRingTimeout(roomId);
+        const timeoutMs = customTimeoutMs || CALL_RING_TIMEOUT_MS;
         activeCallTimeouts[roomId] = setTimeout(async () => {
             try {
                 const call = activeCalls[roomId];
@@ -342,7 +351,7 @@ function setupSocket(server) {
             } catch (error) {
                 console.error('❌ Error timing out call:', error);
             }
-        }, CALL_RING_TIMEOUT_MS);
+        }, timeoutMs);
     };
 
     setInterval(() => {
@@ -354,6 +363,108 @@ function setupSocket(server) {
         console.log('🕒 Active Users:', activeUsers);
         console.log('🕒 All Users:', users);
     }, 30000);
+
+    externalHandlers.handleExternalRinging = async ({ roomId, calleeId }) => {
+        console.log(`🔔 External HTTP Ringing reported for room: ${roomId}, calleeId: ${calleeId}`);
+        if (!roomId || !activeCalls[roomId]) {
+            return { success: false, message: 'Call not active or already ended' };
+        }
+        activeCalls[roomId].status = 'ringing';
+        activeCalls[roomId].updatedAt = new Date();
+        activeCalls[roomId].ringingStartedAt = new Date();
+        scheduleRingTimeout(roomId, 60000);
+        const activeCall = activeCalls[roomId];
+        const callerSockets = getUserSockets(activeCall.callerId, activeCall.callerSocketId);
+        callerSockets.forEach(sId => io.to(sId).emit('ringing_call', { roomId, calleeId }));
+        callingRepository.upsertCallHistory(roomId, { status: 'ringing', ringingStartedAt: new Date() }).catch(e => console.error('Upsert ringing error:', e.message));
+        return { success: true, message: 'Ringing processed' };
+    };
+
+    externalHandlers.handleExternalDecline = async ({ roomId, callerId, calleeId }) => {
+        console.log(`❌ External HTTP Call decline for room: ${roomId}, callerId: ${callerId}, calleeId: ${calleeId}`);
+        const targetRoomId = roomId || Object.keys(activeCalls).find(rId => {
+            const c = activeCalls[rId];
+            return c.callerId === normalizeUserId(callerId) || c.calleeId === normalizeUserId(calleeId);
+        });
+        const activeCall = targetRoomId ? activeCalls[targetRoomId] : null;
+        const targetUserId = callerId || activeCall?.callerId;
+        const targetSockets = getUserSockets(targetUserId, activeCall?.callerSocketId);
+        targetSockets.forEach(sId => io.to(sId).emit('call_declined', {
+            callID: targetUserId,
+            roomId: targetRoomId,
+            declinedBy: calleeId,
+            timestamp: Date.now()
+        }));
+        if (targetRoomId && activeCalls[targetRoomId]) {
+            await cleanupCall(targetRoomId, {
+                status: 'declined',
+                reason: 'declined',
+                endedBy: calleeId || targetUserId,
+                pushType: 'CALL_DECLINED'
+            });
+        }
+        return { success: true, message: 'Call declined successfully' };
+    };
+
+    externalHandlers.handleExternalAccept = async ({ roomId, calleeId }) => {
+        console.log(`✅ External HTTP Call accept for room: ${roomId}, calleeId: ${calleeId}`);
+        const activeCall = activeCalls[roomId];
+        if (!activeCall) {
+            return { success: false, message: 'Call not active or already ended' };
+        }
+        activeCall.status = 'accepted';
+        activeCall.updatedAt = new Date();
+        activeCall.connectedAt = activeCall.connectedAt || new Date();
+        clearRingTimeout(roomId);
+        if (calleeId && !activeCall.participants.includes(calleeId)) {
+            activeCall.participants.push(calleeId);
+        }
+        callingRepository.markCallAccepted(roomId, { answeredAt: activeCall.connectedAt }).catch(e => console.error('Mark accepted error:', e.message));
+        const callerSockets = getUserSockets(activeCall.callerId, activeCall.callerSocketId);
+        callerSockets.forEach(sId => io.to(sId).emit('call_accepted', {
+            roomId,
+            acceptedBy: calleeId
+        }));
+        const otherCalleeSockets = getUserSockets(activeCall.calleeId).filter(sId => sId !== activeCall.callerSocketId);
+        otherCalleeSockets.forEach(sId => io.to(sId).emit('call_cancelled', { roomId, reason: 'answered_elsewhere' }));
+        sendCallLifecycleNotification(activeCall.calleeId, 'CALL_CANCELLED', roomId, { reason: 'answered_elsewhere' }).catch(e => console.error('Notification error:', e.message));
+        return { success: true, message: 'Call accepted successfully' };
+    };
+
+    externalHandlers.handleExternalTimeout = async ({ roomId, calleeId }) => {
+        console.log(`⏰ External HTTP Call timeout for room: ${roomId}, calleeId: ${calleeId}`);
+        if (activeCalls[roomId]) {
+            await cleanupCall(roomId, {
+                status: 'timeout',
+                reason: 'timeout',
+                endedBy: calleeId,
+                pushType: 'CALL_TIMEOUT'
+            });
+        }
+        return { success: true, message: 'Call timed out successfully' };
+    };
+
+    externalHandlers.getExternalCallStatus = (roomId) => {
+        if (!roomId) return { isActive: false, status: 'unknown' };
+        if (activeCalls[roomId]) {
+            return {
+                isActive: true,
+                status: activeCalls[roomId].status,
+                callerId: activeCalls[roomId].callerId,
+                calleeId: activeCalls[roomId].calleeId,
+                callType: activeCalls[roomId].callType
+            };
+        }
+        const recent = recentlyEndedCalls.get(roomId);
+        if (recent) {
+            return {
+                isActive: false,
+                status: recent.status || 'ended',
+                reason: recent.reason || 'ended'
+            };
+        }
+        return { isActive: false, status: 'ended' };
+    };
 
     io.on('connection', (socket) => {
         console.log('🔗 User connected:', socket.id);
@@ -1024,12 +1135,15 @@ socket.on('end_call', async (data) => {
                     if (activeCalls[roomId]) {
                         activeCalls[roomId].status = 'ringing';
                         activeCalls[roomId].updatedAt = new Date();
+                        activeCalls[roomId].ringingStartedAt = new Date();
                     }
+                    scheduleRingTimeout(roomId, 60000);
                     const activeCall = activeCalls[roomId];
                     const callerId = activeCall?.callerId;
                     const callerSocketId = activeCall?.callerSocketId;
                     const callerSockets = getUserSockets(callerId, callerSocketId);
-                    callerSockets.forEach(sId => io.to(sId).emit('ringing_call', { roomId }));
+                    callerSockets.forEach(sId => io.to(sId).emit('ringing_call', { roomId, calleeId }));
+                    callingRepository.upsertCallHistory(roomId, { status: 'ringing', ringingStartedAt: new Date() }).catch(e => console.error('Upsert ringing error:', e.message));
                 }
             } catch (error) {
                 console.error('❌ Error handling callee_ringing:', error);
@@ -1244,4 +1358,12 @@ function analyzeConnectionQuality(stats) {
 
 
 
-module.exports = { setupSocket, getIO };
+module.exports = {
+    setupSocket,
+    getIO,
+    handleExternalRinging: (...args) => externalHandlers.handleExternalRinging ? externalHandlers.handleExternalRinging(...args) : Promise.resolve({ success: false, message: 'Socket server not ready' }),
+    handleExternalDecline: (...args) => externalHandlers.handleExternalDecline ? externalHandlers.handleExternalDecline(...args) : Promise.resolve({ success: false, message: 'Socket server not ready' }),
+    handleExternalAccept: (...args) => externalHandlers.handleExternalAccept ? externalHandlers.handleExternalAccept(...args) : Promise.resolve({ success: false, message: 'Socket server not ready' }),
+    handleExternalTimeout: (...args) => externalHandlers.handleExternalTimeout ? externalHandlers.handleExternalTimeout(...args) : Promise.resolve({ success: false, message: 'Socket server not ready' }),
+    getExternalCallStatus: (...args) => externalHandlers.getExternalCallStatus ? externalHandlers.getExternalCallStatus(...args) : { isActive: false, status: 'not_ready' },
+};
