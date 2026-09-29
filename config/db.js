@@ -3,7 +3,7 @@ const { Sequelize } = require('sequelize');
 const sequelize = new Sequelize(
     'video_conference',
     'mges_call',
-    'VG%40db_%40996633',
+    'VG@db_@996633',
     {
         host: 'localhost',
         port: 3306,
