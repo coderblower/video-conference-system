@@ -1,8 +1,15 @@
 const { Sequelize } = require('sequelize');
 
-// Create a Sequelize instance
 const sequelize = new Sequelize(
-    'mysql://root:VG%40db_%40996633@localhost:3306/video_conference'
+    'video_conference',
+    'mges_call',
+    'VG%40db_%40996633',
+    {
+        host: 'localhost',
+        port: 3306,
+        dialect: 'mysql',
+        logging: false,
+    }
 );
 
 function dbConnect() {
