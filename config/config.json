@@ -1,21 +1,21 @@
 {
   "development": {
-    "username": "root",
-    "password": "maestro@1234",
+    "username": "mges_call",
+    "password": "VG@db_@996633",
     "database": "video_conference",
     "host": "127.0.0.1",
     "dialect": "mysql"
   },
   "test": {
-    "username": "root",
-    "password": "maestro@1234",
+    "username": "mges_call",
+    "password": "VG@db_@996633",
     "database": "video_conference",
     "host": "127.0.0.1",
     "dialect": "mysql"
   },
   "production": {
-    "username": "root",
-    "password": "maestro@1234",
+    "username": "mges_call",
+    "password": "VG@db_@996633",
     "database": "video_conference",
     "host": "127.0.0.1",
     "dialect": "mysql"
